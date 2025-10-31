@@ -1,0 +1,65 @@
+### Test User Registration - Success Case
+POST http://localhost:3000/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "Password123",
+  "name": "Test User",
+  "company": "Test Company",
+  "role": "developer"
+}
+
+### Test User Registration - Without Company (Optional Field)
+POST http://localhost:3000/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "buyer@example.com",
+  "password": "SecurePass123",
+  "name": "Buyer User",
+  "role": "buyer"
+}
+
+### Test User Registration - Duplicate Email (Should Fail with 409)
+POST http://localhost:3000/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "AnotherPass123",
+  "name": "Another User",
+  "role": "verifier"
+}
+
+### Test User Registration - Invalid Email (Should Fail with 400)
+POST http://localhost:3000/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "invalid-email",
+  "password": "Password123",
+  "name": "Test User",
+  "role": "developer"
+}
+
+### Test User Registration - Weak Password (Should Fail with 400)
+POST http://localhost:3000/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "weak@example.com",
+  "password": "weak",
+  "name": "Test User",
+  "role": "developer"
+}
+
+### Test User Registration - Missing Required Field (Should Fail with 400)
+POST http://localhost:3000/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "missing@example.com",
+  "password": "Password123",
+  "role": "developer"
+}
