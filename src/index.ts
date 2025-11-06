@@ -128,6 +128,11 @@ class App {
 
       logger.info('Cardano transaction service initialized successfully');
 
+      // Start monitoring pending transactions on startup
+      if (this.cardanoTransactionService) {
+        await this.cardanoTransactionService.startMonitoringPendingTransactions();
+      }
+
       // Start session cleanup scheduler
       this.sessionCleanupInterval = startSessionCleanupScheduler();
 
@@ -150,6 +155,11 @@ class App {
       // Stop session cleanup scheduler
       if (this.sessionCleanupInterval) {
         stopSessionCleanupScheduler(this.sessionCleanupInterval);
+      }
+
+      // Stop all transaction monitoring
+      if (this.cardanoTransactionService) {
+        this.cardanoTransactionService.stopAllMonitoring();
       }
 
       await database.disconnect();

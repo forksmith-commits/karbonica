@@ -9,6 +9,7 @@ import {
 } from '../entities/BlockchainTransaction';
 import { BlockchainTransactionRepository } from '../repositories/BlockchainTransactionRepository';
 import { RateLimiter } from '../../infrastructure/services/RateLimiter';
+import { TransactionMonitoringService } from '../../infrastructure/services/TransactionMonitoringService';
 
 export interface TransactionMetadata {
   [key: string]: any;
@@ -48,6 +49,7 @@ export class CardanoTransactionService {
   private platformWallet: PlatformWalletService;
   private blockchainTxRepo: BlockchainTransactionRepository;
   private rateLimiter: RateLimiter;
+  private monitoringService: TransactionMonitoringService;
 
   constructor(
     platformWallet: PlatformWalletService,
@@ -56,6 +58,7 @@ export class CardanoTransactionService {
     this.platformWallet = platformWallet;
     this.blockchainTxRepo = blockchainTxRepo;
     this.rateLimiter = new RateLimiter(50, 1000); // 50 requests per second
+    this.monitoringService = new TransactionMonitoringService(blockchainTxRepo);
   }
 
   async buildTransaction(
@@ -273,6 +276,9 @@ export class CardanoTransactionService {
 
       await this.blockchainTxRepo.save(blockchainTx);
 
+      // Start monitoring the transaction
+      await this.monitoringService.startMonitoring(txHash);
+
       logger.info('Transaction submitted successfully', {
         txHash,
         metadata,
@@ -311,6 +317,27 @@ export class CardanoTransactionService {
   }
   private generateTransactionId(): string {
     return `tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Get the monitoring service instance for starting/stopping transaction monitoring
+   */
+  getMonitoringService(): TransactionMonitoringService {
+    return this.monitoringService;
+  }
+
+  /**
+   * Start monitoring pending transactions (convenience method)
+   */
+  async startMonitoringPendingTransactions(): Promise<void> {
+    await this.monitoringService.startMonitoringPendingTransactions();
+  }
+
+  /**
+   * Stop all transaction monitoring (convenience method)
+   */
+  stopAllMonitoring(): void {
+    this.monitoringService.stopAllMonitoring();
   }
 }
 

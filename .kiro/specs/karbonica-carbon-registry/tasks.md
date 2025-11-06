@@ -391,7 +391,7 @@ This implementation plan breaks down the Karbonica platform development into dis
   - Implement rate limiting for Blockfrost API (50 req/sec)
   - _Requirements: 15.7, 15.8, 15.9, 15.16_
 
-- [ ] 29. Implement Cardano transaction monitoring
+- [x] 29. Implement Cardano transaction monitoring
   - Implement transaction status polling (every 20 seconds)
   - Check for 6 confirmations
   - Update blockchain transaction status to "confirmed"
