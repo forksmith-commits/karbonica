@@ -383,7 +383,7 @@ This implementation plan breaks down the Karbonica platform development into dis
   - Test UTxO selection
   - _Requirements: 15.3, 15.4, 15.5_
 
-- [ ] 28. Implement Cardano transaction signing and submission
+- [x] 28. Implement Cardano transaction signing and submission
   - Implement Ed25519 transaction signing with platform wallet
   - Implement Blockfrost API client for transaction submission
   - Create BlockchainTransaction entity and repository

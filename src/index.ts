@@ -20,9 +20,15 @@ import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
 import { startSessionCleanupScheduler, stopSessionCleanupScheduler } from './utils/sessionCleanup';
 
+import { InMemoryBlockchainTransactionRepository } from './domain/repositories/BlockchainTransactionRepository';
+import { CardanoTransactionService } from './domain/services/CardanoTransactionService';
+import { PlatformWalletService } from './infrastructure/services/PlatformWalletService';
+import { FileDevVaultService } from './infrastructure/services/VaultService';
+
 class App {
   public app: Application;
   private sessionCleanupInterval?: NodeJS.Timeout;
+  public cardanoTransactionService?: CardanoTransactionService; // Add this line
 
   constructor() {
     this.app = express();
@@ -59,7 +65,7 @@ class App {
     );
 
     // Swagger JSON endpoint
-    this.app.get('/api-docs.json', (req, res) => {
+    this.app.get('/api-docs.json', (_req, res) => {
       res.setHeader('Content-Type', 'application/json');
       res.send(swaggerSpec);
     });
@@ -96,6 +102,31 @@ class App {
       // Initialize platform wallet
       await initializePlatformWallet();
       logger.info('Platform wallet initialized successfully');
+
+      // Initialize services
+      const blockchainTxRepo = new InMemoryBlockchainTransactionRepository();
+
+      // Create VaultService
+      const vaultService = new FileDevVaultService();
+
+      // Create PlatformWalletConfig
+      const platformWalletConfig = {
+        walletName: 'platform-wallet',
+        vaultKeyPrefix: 'cardano-platform',
+        minBalanceThreshold: 5000000, // 5 ADA in lovelace
+        alertThreshold: 10000000, // 10 ADA in lovelace
+      };
+
+      // Create PlatformWalletService with required arguments
+      const platformWalletService = new PlatformWalletService(vaultService, platformWalletConfig);
+
+      // Create CardanoTransactionService
+      this.cardanoTransactionService = new CardanoTransactionService(
+        platformWalletService,
+        blockchainTxRepo
+      );
+
+      logger.info('Cardano transaction service initialized successfully');
 
       // Start session cleanup scheduler
       this.sessionCleanupInterval = startSessionCleanupScheduler();
@@ -150,4 +181,4 @@ process.on('SIGINT', async () => {
 // Start the application
 application.start();
 
-export default application;
+export { application };

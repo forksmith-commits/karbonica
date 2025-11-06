@@ -3,6 +3,12 @@ import { BlockfrostProvider, MeshTxBuilder } from '@meshsdk/core';
 import { PlatformWalletService } from '../../infrastructure/services/PlatformWalletService';
 import { getCardanoConfig } from '../../config/cardano';
 import { logger } from '../../utils/logger';
+import {
+  BlockchainTransaction,
+  BlockchainTransactionError,
+} from '../entities/BlockchainTransaction';
+import { BlockchainTransactionRepository } from '../repositories/BlockchainTransactionRepository';
+import { RateLimiter } from '../../infrastructure/services/RateLimiter';
 
 export interface TransactionMetadata {
   [key: string]: any;
@@ -33,11 +39,23 @@ export interface UnsignedTransaction {
   metadata?: TransactionMetadata;
 }
 
+export interface BlockchainMetadata {
+  creditId?: string;
+  operationType?: 'transfer' | 'retirement' | 'issuance';
+}
+
 export class CardanoTransactionService {
   private platformWallet: PlatformWalletService;
+  private blockchainTxRepo: BlockchainTransactionRepository;
+  private rateLimiter: RateLimiter;
 
-  constructor(platformWallet: PlatformWalletService) {
+  constructor(
+    platformWallet: PlatformWalletService,
+    blockchainTxRepo: BlockchainTransactionRepository
+  ) {
     this.platformWallet = platformWallet;
+    this.blockchainTxRepo = blockchainTxRepo;
+    this.rateLimiter = new RateLimiter(50, 1000); // 50 requests per second
   }
 
   async buildTransaction(
@@ -142,6 +160,7 @@ export class CardanoTransactionService {
       // Get the Mesh wallet and provider from PlatformWalletService
       const meshWallet = await this.platformWallet.getMeshWallet();
       const utxos = await meshWallet.getUtxos();
+      // const changeAddress = await meshWallet.getChangeAddress();
 
       // Get the provider from PlatformWalletService
       const cardanoConfig = getCardanoConfig();
@@ -212,6 +231,86 @@ export class CardanoTransactionService {
         ...data,
       },
     };
+  }
+
+  async signTransaction(unsignedTxCbor: string): Promise<string> {
+    try {
+      const meshWallet = await this.platformWallet.getMeshWallet();
+
+      // Sign the transaction using Mesh SDK
+      const signedTx = await meshWallet.signTx(unsignedTxCbor);
+
+      logger.info('Transaction signed successfully', {
+        txSize: signedTx.length,
+      });
+
+      return signedTx;
+    } catch (error) {
+      logger.error('Failed to sign transaction', { error });
+      throw new BlockchainTransactionError('Failed to sign transaction', error as Error);
+    }
+  }
+
+  async submitTransaction(signedTxCbor: string, metadata?: BlockchainMetadata): Promise<string> {
+    try {
+      // Apply rate limiting before submission
+      await this.rateLimiter.checkLimit();
+
+      const meshWallet = await this.platformWallet.getMeshWallet();
+
+      // Submit the transaction using Mesh SDK
+      const txHash = await meshWallet.submitTx(signedTxCbor);
+
+      // Record the transaction in our database
+      const blockchainTx: BlockchainTransaction = {
+        id: this.generateTransactionId(),
+        txHash,
+        status: 'pending',
+        submissionTimestamp: new Date(),
+        retryCount: 0,
+        metadata,
+      };
+
+      await this.blockchainTxRepo.save(blockchainTx);
+
+      logger.info('Transaction submitted successfully', {
+        txHash,
+        metadata,
+      });
+
+      return txHash;
+    } catch (error) {
+      logger.error('Failed to submit transaction', { error });
+      throw new BlockchainTransactionError('Failed to submit transaction', error as Error);
+    }
+  }
+
+  async buildSignAndSubmitTransaction(
+    outputs: TransactionOutput[],
+    metadata?: TransactionMetadata,
+    blockchainMetadata?: BlockchainMetadata
+  ): Promise<string> {
+    try {
+      // Build the transaction
+      const unsignedTx = await this.buildTransaction(outputs, metadata);
+
+      // Sign the transaction
+      const signedTx = await this.signTransaction(unsignedTx.txBody);
+
+      // Submit the transaction
+      const txHash = await this.submitTransaction(signedTx, blockchainMetadata);
+
+      return txHash;
+    } catch (error) {
+      logger.error('Failed to build, sign, and submit transaction', { error });
+      throw new BlockchainTransactionError(
+        'Failed to build, sign, and submit transaction',
+        error as Error
+      );
+    }
+  }
+  private generateTransactionId(): string {
+    return `tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 }
 
