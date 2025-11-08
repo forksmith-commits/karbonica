@@ -436,7 +436,11 @@ This implementation plan breaks down the Karbonica platform development into dis
   - Create credit transaction record with type "transfer"
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8_
 
-- [ ] 32. Optionally record credit transfer on Cardano
+- [x] 32. Optionally record credit transfer on Cardano
+
+
+
+
   - Build Cardano transaction with transfer metadata
   - Submit to Cardano Preview testnet
   - Store transaction hash

@@ -23,6 +23,7 @@ import { cotErrorHandler } from '../../infrastructure/services/COTErrorHandler';
 import { cotMonitoringService } from '../../infrastructure/services/COTMonitoringService';
 import { logger } from '../../utils/logger';
 import { ICardanoWalletRepository } from '../../domain/repositories/ICardanoWalletRepository';
+import { CardanoTransactionService } from '../../domain/services/CardanoTransactionService';
 
 // Type definitions for filters and pagination
 export interface CreditFilters {
@@ -49,7 +50,8 @@ export class CreditService {
     private projectRepository: IProjectRepository,
     private userRepository: IUserRepository,
     private cardanoMintingService?: CardanoMintingService,
-    private walletRepository?: ICardanoWalletRepository
+    private walletRepository?: ICardanoWalletRepository,
+    private cardanoTransactionService?: CardanoTransactionService
   ) {
     this.cotMetadataService = new COTMetadataService();
   }
@@ -77,7 +79,9 @@ export class CreditService {
         projectStatus: project.status,
         expectedStatus: ProjectStatus.VERIFIED,
       });
-      throw new Error(`Project must be verified before credits can be issued. Current status: ${project.status}`);
+      throw new Error(
+        `Project must be verified before credits can be issued. Current status: ${project.status}`
+      );
     }
 
     // Check if credits have already been issued for this project
@@ -92,7 +96,9 @@ export class CreditService {
         projectId,
         emissionsTarget: project.emissionsTarget,
       });
-      throw new Error(`Project has invalid emissions target: ${project.emissionsTarget}. Must be greater than 0.`);
+      throw new Error(
+        `Project has invalid emissions target: ${project.emissionsTarget}. Must be greater than 0.`
+      );
     }
 
     // Validate project developer exists
@@ -296,23 +302,23 @@ export class CreditService {
           error: error instanceof Error ? error.message : 'Unknown error',
         });
       }
-      } else {
-        if (!this.cardanoMintingService) {
-          logger.warn('⚠️ COT minting service not available - credits issued without tokens', {
-            creditId: savedCreditEntry.creditId,
-            reason: 'CardanoMintingService was not initialized',
-          });
-        }
-        if (!developerWalletAddress) {
-          logger.warn('⚠️ Developer has no wallet address - credits issued without tokens', {
-            creditId: savedCreditEntry.creditId,
-            developerId: developer.id,
-            developerEmail: developer.email,
-            reason: 'Developer must link wallet address via /api/v1/wallet/link endpoint',
-            hasWalletRepository: !!this.walletRepository,
-          });
-        }
+    } else {
+      if (!this.cardanoMintingService) {
+        logger.warn('COT minting service not available - credits issued without tokens', {
+          creditId: savedCreditEntry.creditId,
+          reason: 'CardanoMintingService was not initialized',
+        });
       }
+      if (!developerWalletAddress) {
+        logger.warn('Developer has no wallet address - credits issued without tokens', {
+          creditId: savedCreditEntry.creditId,
+          developerId: developer.id,
+          developerEmail: developer.email,
+          reason: 'Developer must link wallet address via /api/v1/wallet/link endpoint',
+          hasWalletRepository: !!this.walletRepository,
+        });
+      }
+    }
 
     // Create credit transaction record with type "issuance" (Requirement 5.8)
     const transaction: CreditTransaction = {
@@ -400,7 +406,10 @@ export class CreditService {
   /**
    * Get all credits (for administrators)
    */
-  async getAllCredits(filters?: CreditFilters, pagination?: PaginationOptions): Promise<CreditEntry[]> {
+  async getAllCredits(
+    filters?: CreditFilters,
+    pagination?: PaginationOptions
+  ): Promise<CreditEntry[]> {
     return await this.creditEntryRepository.findAll(filters, pagination);
   }
 
@@ -414,6 +423,16 @@ export class CreditService {
   /**
    * Transfer credits to another user
    * Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8
+   *
+   * This method performs the following operations:
+   * 1. Validates the transfer (ownership, quantity, status)
+   * 2. Updates credit ownership in the database
+   * 3. Transfers COT tokens on Cardano (if available)
+   * 4. Optionally records transfer metadata on Cardano blockchain (Task 32)
+   * 5. Creates a transaction record
+   *
+   * The optional Cardano metadata recording (Task 32) creates an immutable audit trail
+   * of the transfer on the blockchain, separate from the COT token transfer itself.
    */
   async transferCredits(
     creditId: string,
@@ -574,6 +593,69 @@ export class CreditService {
         }
       }
 
+      // Optionally record transfer metadata on Cardano blockchain (Task 32)
+      // This is separate from the COT token transfer - it records the transfer event as metadata
+      let metadataRecordTxHash: string | undefined;
+
+      if (this.cardanoTransactionService && tokenTransferStatus === 'completed') {
+        try {
+          logger.info('Recording transfer metadata on Cardano blockchain', {
+            creditId: credit.creditId,
+            senderId,
+            recipientId,
+            quantity,
+          });
+
+          // Get project details for metadata
+          const project = await this.projectRepository.findById(credit.projectId);
+
+          // Build transfer metadata in CIP-20 format
+          const transferMetadata = {
+            action: 'transfer',
+            creditId: credit.creditId,
+            projectId: credit.projectId,
+            projectTitle: project?.title,
+            quantity: quantity.toString(),
+            vintage: credit.vintage,
+            senderId,
+            recipientId,
+            timestamp: now.toISOString(),
+            policyId: credit.policyId,
+            assetName: credit.assetName,
+          };
+
+          // Submit metadata transaction to Cardano
+          // The transaction sends a minimal amount to the recipient's wallet
+          // The important part is the metadata that gets recorded on-chain
+          metadataRecordTxHash = await this.cardanoTransactionService.buildSignAndSubmitTransaction(
+            [
+              {
+                address: recipient.walletAddress!, // Send to recipient as confirmation
+                amount: '1500000', // 1.5 ADA minimal output
+              },
+            ],
+            transferMetadata,
+            {
+              creditId: credit.creditId,
+              operationType: 'transfer',
+            }
+          );
+
+          logger.info('Transfer metadata recorded on Cardano', {
+            creditId: credit.creditId,
+            metadataRecordTxHash,
+            recipientWallet: recipient.walletAddress,
+          });
+        } catch (error) {
+          // Don't fail the transfer if metadata recording fails
+          logger.warn('Failed to record transfer metadata on Cardano', {
+            error,
+            creditId: credit.creditId,
+            errorMessage: error instanceof Error ? error.message : 'Unknown error',
+          });
+        }
+      }
+
       // Create credit transaction record with type "transfer" (Requirement 6.8)
       const transaction: CreditTransaction = {
         id: uuidv4(),
@@ -591,6 +673,8 @@ export class CreditService {
           recipientHasWallet: !!recipient.walletAddress,
           policyId: credit.policyId,
           assetName: credit.assetName,
+          metadataRecordTxHash, // Cardano metadata recording transaction hash
+          metadataRecorded: !!metadataRecordTxHash,
         },
         createdAt: now,
         completedAt: now,
@@ -616,6 +700,8 @@ export class CreditService {
         cotTransferred: tokenTransferStatus === 'completed',
         cotTransferStatus: tokenTransferStatus,
         tokenTransferTxHash,
+        metadataRecorded: !!metadataRecordTxHash,
+        metadataRecordTxHash,
       });
 
       return {

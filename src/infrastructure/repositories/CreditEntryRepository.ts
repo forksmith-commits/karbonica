@@ -60,7 +60,11 @@ export class CreditEntryRepository implements ICreditEntryRepository {
     }
   }
 
-  async findByOwner(ownerId: string, filters?: CreditFilters, pagination?: PaginationOptions): Promise<CreditEntry[]> {
+  async findByOwner(
+    ownerId: string,
+    filters?: CreditFilters,
+    pagination?: PaginationOptions
+  ): Promise<CreditEntry[]> {
     let query = `
       SELECT 
         id, credit_id, project_id, owner_id, quantity, vintage, status,
@@ -266,14 +270,14 @@ export class CreditEntryRepository implements ICreditEntryRepository {
     const projectQuery = `
       SELECT created_at FROM projects WHERE id = $1
     `;
-    
+
     const projectResult = await this.pool.query(projectQuery, [projectId]);
     if (!projectResult.rows[0]) {
       throw new Error(`Project ${projectId} not found`);
     }
-    
+
     const projectCreatedAt = projectResult.rows[0].created_at;
-    
+
     // Count projects created before or at the same time as this project
     const query = `
       SELECT COUNT(*) + 1 as sequence
@@ -473,22 +477,32 @@ export class CreditEntryRepository implements ICreditEntryRepository {
   }
 
   private mapRowToCreditEntry(row: Record<string, unknown>): CreditEntry {
+    // Handle token_metadata - could be string (TEXT/JSON) or already parsed object (JSONB)
+    let tokenMetadata: Record<string, unknown> | undefined;
+    if (row.token_metadata) {
+      if (typeof row.token_metadata === 'string') {
+        tokenMetadata = JSON.parse(row.token_metadata) as Record<string, unknown>;
+      } else if (typeof row.token_metadata === 'object' && row.token_metadata !== null) {
+        tokenMetadata = row.token_metadata as Record<string, unknown>;
+      }
+    }
+
     return {
-      id: row.id,
-      creditId: row.credit_id,
-      projectId: row.project_id,
-      ownerId: row.owner_id,
-      quantity: parseFloat(row.quantity),
-      vintage: row.vintage,
+      id: String(row.id),
+      creditId: String(row.credit_id),
+      projectId: String(row.project_id),
+      ownerId: String(row.owner_id),
+      quantity: parseFloat(String(row.quantity)),
+      vintage: Number(row.vintage),
       status: row.status as CreditStatus,
-      issuedAt: new Date(row.issued_at),
-      lastActionAt: new Date(row.last_action_at),
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at),
-      policyId: row.policy_id || undefined,
-      assetName: row.asset_name || undefined,
-      mintTxHash: row.mint_tx_hash || undefined,
-      tokenMetadata: row.token_metadata ? JSON.parse(row.token_metadata) : undefined,
+      issuedAt: new Date(row.issued_at as string | Date),
+      lastActionAt: new Date(row.last_action_at as string | Date),
+      createdAt: new Date(row.created_at as string | Date),
+      updatedAt: new Date(row.updated_at as string | Date),
+      policyId: row.policy_id ? String(row.policy_id) : undefined,
+      assetName: row.asset_name ? String(row.asset_name) : undefined,
+      mintTxHash: row.mint_tx_hash ? String(row.mint_tx_hash) : undefined,
+      tokenMetadata,
     };
   }
 }

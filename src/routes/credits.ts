@@ -25,6 +25,8 @@ import { getPlatformWalletService } from '../config/platformWallet';
 import { CardanoWalletRepository } from '../infrastructure/repositories/CardanoWalletRepository';
 import { CreditFilters, PaginationOptions } from '../application/services/CreditService';
 import { CreditEntry } from '../domain/entities/CreditEntry';
+import { CardanoTransactionService } from '../domain/services/CardanoTransactionService';
+import { InMemoryBlockchainTransactionRepository } from '../domain/repositories/IBlockchainTransactionRepository';
 
 const router = Router();
 
@@ -60,7 +62,7 @@ export const getCreditService = () => {
     logger.info('Initializing Cardano minting service...');
     const mintingTxRepository = new MintingTransactionRepositoryPg();
     logger.info('✅ Minting transaction repository created');
-    
+
     logger.info('Attempting to get platform wallet service...');
     let platformWalletService;
     try {
@@ -70,30 +72,39 @@ export const getCreditService = () => {
       });
     } catch (walletError) {
       logger.error('Failed to get platform wallet service', {
-        error: walletError instanceof Error ? {
-          message: walletError.message,
-          stack: walletError.stack,
-          name: walletError.name,
-        } : walletError,
+        error:
+          walletError instanceof Error
+            ? {
+                message: walletError.message,
+                stack: walletError.stack,
+                name: walletError.name,
+              }
+            : walletError,
       });
       throw walletError; // Re-throw to be caught by outer catch
     }
-    
+
     logger.info('Creating CardanoMintingService instance...');
     cardanoMintingService = new CardanoMintingService(mintingTxRepository, platformWalletService);
     logger.info('✅ Cardano minting service initialized successfully for credit issuance', {
       hasMintingService: !!cardanoMintingService,
     });
   } catch (error) {
-    logger.error('❌ Failed to initialize Cardano minting service - credits will be issued without token minting', {
-      error: error instanceof Error ? {
-        message: error.message,
-        stack: error.stack,
-        name: error.name
-      } : error,
-      errorString: String(error),
-      errorType: typeof error,
-    });
+    logger.error(
+      'Failed to initialize Cardano minting service - credits will be issued without token minting',
+      {
+        error:
+          error instanceof Error
+            ? {
+                message: error.message,
+                stack: error.stack,
+                name: error.name,
+              }
+            : error,
+        errorString: String(error),
+        errorType: typeof error,
+      }
+    );
     // Continue without minting service - credits will still be issued in database
     cardanoMintingService = undefined;
   }
@@ -101,13 +112,35 @@ export const getCreditService = () => {
   // Initialize wallet repository to fetch wallet addresses from cardano_wallets table
   const walletRepository = new CardanoWalletRepository();
 
+  // Initialize Cardano transaction service for optional transfer metadata recording
+  let cardanoTransactionService: CardanoTransactionService | undefined;
+  try {
+    logger.info('Initializing Cardano transaction service for transfer metadata recording...');
+    const blockchainTxRepository = new InMemoryBlockchainTransactionRepository();
+    const platformWalletService = getPlatformWalletService();
+    cardanoTransactionService = new CardanoTransactionService(
+      platformWalletService,
+      blockchainTxRepository
+    );
+    logger.info('✅ Cardano transaction service initialized successfully');
+  } catch (error) {
+    logger.warn(
+      'Failed to initialize Cardano transaction service - transfer metadata recording will be skipped',
+      {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      }
+    );
+    cardanoTransactionService = undefined;
+  }
+
   return new CreditService(
     creditEntryRepository,
     creditTransactionRepository,
     projectRepository,
     userRepository,
     cardanoMintingService,
-    walletRepository
+    walletRepository,
+    cardanoTransactionService
   );
 };
 
@@ -369,7 +402,7 @@ router.get(
       const filters: CreditFilters = {};
       if (status) filters.status = status;
       if (vintage) filters.vintage = vintage;
-      
+
       const pagination: PaginationOptions = {
         limit,
         cursor,
@@ -581,7 +614,7 @@ router.get(
       const filters: CreditFilters = {};
       if (status) filters.status = status;
       if (vintage) filters.vintage = vintage;
-      
+
       const pagination: PaginationOptions = {
         limit,
         cursor,
@@ -817,11 +850,14 @@ router.post(
       res.status(200).json(response);
     } catch (error: unknown) {
       logger.error('Error transferring credits', {
-        error: error instanceof Error ? {
-          message: error.message,
-          stack: error.stack,
-          name: error.name,
-        } : error,
+        error:
+          error instanceof Error
+            ? {
+                message: error.message,
+                stack: error.stack,
+                name: error.name,
+              }
+            : error,
         creditId: req.params.id,
         userId: req.user?.id,
         body: req.body,
@@ -870,8 +906,8 @@ router.post(
       if (
         error instanceof Error &&
         (error.message === 'Credit must be active to transfer' ||
-        error.message === 'Transfer quantity must be positive' ||
-        error.message === 'Transfer quantity exceeds owned amount')
+          error.message === 'Transfer quantity must be positive' ||
+          error.message === 'Transfer quantity exceeds owned amount')
       ) {
         return res.status(400).json({
           status: 'error',
@@ -1091,9 +1127,9 @@ router.post(
       if (
         error instanceof Error &&
         (error.message === 'Credit must be active to retire' ||
-        error.message === 'Retirement quantity must be positive' ||
-        error.message === 'Retirement quantity exceeds owned amount' ||
-        error.message === 'Retirement reason is required')
+          error.message === 'Retirement quantity must be positive' ||
+          error.message === 'Retirement quantity exceeds owned amount' ||
+          error.message === 'Retirement reason is required')
       ) {
         return res.status(400).json({
           status: 'error',
@@ -1148,7 +1184,10 @@ router.post(
       }
 
       const creditService = getCreditService();
-      const { creditEntry, transaction } = await creditService.issueCredits(projectId, verificationId);
+      const { creditEntry, transaction } = await creditService.issueCredits(
+        projectId,
+        verificationId
+      );
 
       const response: CreditResponse = {
         status: 'success',
@@ -1170,13 +1209,17 @@ router.post(
 
       return res.status(201).json(response);
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'An error occurred while issuing credits';
+      const errorMessage =
+        error instanceof Error ? error.message : 'An error occurred while issuing credits';
       logger.error('Error in manual credit issuance', {
-        error: error instanceof Error ? {
-          message: error.message,
-          stack: error.stack,
-          name: error.name,
-        } : error,
+        error:
+          error instanceof Error
+            ? {
+                message: error.message,
+                stack: error.stack,
+                name: error.name,
+              }
+            : error,
         body: req.body,
       });
       return res.status(500).json({
