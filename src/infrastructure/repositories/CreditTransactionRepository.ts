@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import {
   CreditTransaction,
   TransactionType,
@@ -7,6 +7,7 @@ import {
 import { ICreditTransactionRepository } from '../../domain/repositories/ICreditTransactionRepository';
 import { database } from '../../config/database';
 import { logger } from '../../utils/logger';
+import { PaginationOptions } from '../../application/services/CreditService';
 
 export class CreditTransactionRepository implements ICreditTransactionRepository {
   private pool: Pool;
@@ -59,8 +60,8 @@ export class CreditTransactionRepository implements ICreditTransactionRepository
 
   async findBySender(
     senderId: string,
-    filters?: any,
-    pagination?: any
+    filters?: Record<string, unknown>,
+    pagination?: PaginationOptions
   ): Promise<CreditTransaction[]> {
     let query = `
       SELECT 
@@ -70,7 +71,7 @@ export class CreditTransactionRepository implements ICreditTransactionRepository
       WHERE sender_id = $1
     `;
 
-    const params: any[] = [senderId];
+    const params: (string | number | undefined)[] = [senderId];
     let paramIndex = 2;
 
     // Apply filters
@@ -119,8 +120,8 @@ export class CreditTransactionRepository implements ICreditTransactionRepository
 
   async findByRecipient(
     recipientId: string,
-    filters?: any,
-    pagination?: any
+    filters?: Record<string, unknown>,
+    pagination?: PaginationOptions
   ): Promise<CreditTransaction[]> {
     let query = `
       SELECT 
@@ -130,7 +131,7 @@ export class CreditTransactionRepository implements ICreditTransactionRepository
       WHERE recipient_id = $1
     `;
 
-    const params: any[] = [recipientId];
+    const params: (string | number | undefined)[] = [recipientId];
     let paramIndex = 2;
 
     // Apply filters
@@ -179,8 +180,8 @@ export class CreditTransactionRepository implements ICreditTransactionRepository
 
   async findByType(
     transactionType: string,
-    filters?: any,
-    pagination?: any
+    filters?: Record<string, unknown>,
+    pagination?: PaginationOptions
   ): Promise<CreditTransaction[]> {
     let query = `
       SELECT 
@@ -190,7 +191,7 @@ export class CreditTransactionRepository implements ICreditTransactionRepository
       WHERE transaction_type = $1
     `;
 
-    const params: any[] = [transactionType];
+    const params: (string | number | undefined)[] = [transactionType];
     let paramIndex = 2;
 
     // Apply filters
@@ -313,7 +314,7 @@ export class CreditTransactionRepository implements ICreditTransactionRepository
     }
   }
 
-  async count(filters?: any): Promise<number> {
+  async count(filters?: Record<string, unknown>): Promise<number> {
     let query = 'SELECT COUNT(*) as count FROM credit_transactions WHERE 1=1';
     const params: any[] = [];
     let paramIndex = 1;
@@ -357,7 +358,44 @@ export class CreditTransactionRepository implements ICreditTransactionRepository
     }
   }
 
-  private mapRowToCreditTransaction(row: any): CreditTransaction {
+  async saveWithClient(
+    client: PoolClient,
+    creditTransaction: CreditTransaction
+  ): Promise<CreditTransaction> {
+    const query = `
+      INSERT INTO credit_transactions (
+        id, credit_id, transaction_type, sender_id, recipient_id, quantity, 
+        status, blockchain_tx_hash, metadata, created_at, completed_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      RETURNING 
+        id, credit_id, transaction_type, sender_id, recipient_id, quantity, 
+        status, blockchain_tx_hash, metadata, created_at, completed_at
+    `;
+
+    const params = [
+      creditTransaction.id,
+      creditTransaction.creditId,
+      creditTransaction.transactionType,
+      creditTransaction.senderId || null,
+      creditTransaction.recipientId || null,
+      creditTransaction.quantity,
+      creditTransaction.status,
+      creditTransaction.blockchainTxHash || null,
+      creditTransaction.metadata ? JSON.stringify(creditTransaction.metadata) : null,
+      creditTransaction.createdAt,
+      creditTransaction.completedAt || null,
+    ];
+
+    try {
+      const result = await client.query(query, params);
+      return this.mapRowToCreditTransaction(result.rows[0]);
+    } catch (error) {
+      logger.error('Error saving credit transaction with client', { error, creditTransaction });
+      throw error;
+    }
+  }
+
+  private mapRowToCreditTransaction(row: Record<string, unknown>): CreditTransaction {
     return {
       id: row.id,
       creditId: row.credit_id,
@@ -367,7 +405,11 @@ export class CreditTransactionRepository implements ICreditTransactionRepository
       quantity: parseFloat(row.quantity),
       status: row.status as TransactionStatus,
       blockchainTxHash: row.blockchain_tx_hash,
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+      metadata: row.metadata
+        ? typeof row.metadata === 'string'
+          ? JSON.parse(row.metadata)
+          : row.metadata
+        : undefined,
       createdAt: new Date(row.created_at),
       completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
     };

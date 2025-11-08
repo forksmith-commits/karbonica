@@ -23,6 +23,11 @@ export interface CreditEntry {
   lastActionAt: Date;
   createdAt: Date;
   updatedAt: Date;
+  // COT (Carbon Offset Token) blockchain fields
+  policyId?: string; // Cardano minting policy ID
+  assetName?: string; // Token asset name (hex encoded)
+  mintTxHash?: string; // Minting transaction hash
+  tokenMetadata?: Record<string, unknown>; // On-chain token metadata
 }
 
 /**

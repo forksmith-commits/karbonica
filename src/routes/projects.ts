@@ -13,6 +13,7 @@ import { authenticate } from '../middleware/authenticate';
 import { authorize, requireRole } from '../middleware/authorize';
 import { UserRole } from '../domain/entities/User';
 import { Resource, Action } from '../middleware/permissions';
+import { ProjectFilters, PaginationOptions } from '../domain/repositories/IProjectRepository';
 
 const router = Router();
 
@@ -320,8 +321,8 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
     const userId = req.user!.id;
     const userRole = req.user!.role;
 
-    const filters: any = {};
-    const pagination: any = {
+    const filters: ProjectFilters = {};
+    const pagination: PaginationOptions = {
       limit: parseInt(req.query.limit as string) || 20,
       cursor: req.query.cursor as string,
       sortBy: (req.query.sortBy as string) || 'created_at',

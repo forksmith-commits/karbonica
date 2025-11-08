@@ -189,7 +189,7 @@ export class VerificationService {
     message: string,
     userId: string,
     userRole: UserRole,
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   ): Promise<VerificationEvent> {
     // Get verification request
     const verification = await this.verificationRepository.findById(verificationId);
@@ -323,6 +323,12 @@ export class VerificationService {
         // Issue carbon credits automatically (Requirements 5.1, 5.2, 5.3, 5.4, 5.5, 5.8)
         if (this.creditService) {
           try {
+            logger.info('Attempting to issue credits after project verification', {
+              projectId: verification.projectId,
+              verificationId,
+              projectStatus: project.status,
+            });
+            
             const { creditEntry, transaction } = await this.creditService.issueCredits(
               verification.projectId,
               verificationId
@@ -359,15 +365,51 @@ export class VerificationService {
             };
 
             await this.verificationEventRepository.save(creditIssuanceEvent);
-          } catch (creditError) {
+          } catch (creditError: unknown) {
+            const errorMessage = creditError instanceof Error ? creditError.message : 'Unknown error';
+            const errorStack = creditError instanceof Error ? creditError.stack : 'No stack trace';
+            
             logger.error('Failed to issue credits on verification approval', {
-              error: creditError,
+              error: creditError instanceof Error ? {
+                message: creditError.message,
+                stack: creditError.stack,
+                name: creditError.name,
+              } : creditError,
+              errorMessage,
+              errorStack,
               verificationId,
               projectId: verification.projectId,
               approvedBy: userId,
             });
+            
             // Don't fail the verification approval if credit issuance fails
             // This allows manual credit issuance later if needed
+            // But log the error clearly for debugging
+            console.error('❌ CREDIT ISSUANCE FAILED:', {
+              message: errorMessage,
+              stack: errorStack,
+              projectId: verification.projectId,
+              verificationId,
+            });
+            
+            // Add error to timeline so it's visible
+            try {
+              const errorEvent: VerificationEvent = {
+                id: uuidv4(),
+                verificationId: verification.id,
+                eventType: 'error',
+                message: `Credit issuance failed: ${errorMessage}`,
+                userId,
+                metadata: {
+                  error: errorMessage,
+                  projectId: verification.projectId,
+                },
+                createdAt: new Date(),
+              };
+              await this.verificationEventRepository.save(errorEvent);
+            } catch (eventError) {
+              logger.error('Failed to save credit issuance error event', { eventError });
+            }
           }
         }
       }
@@ -423,6 +465,99 @@ export class VerificationService {
       status: updatedVerification.status,
       progress: updatedVerification.progress,
       documentCount: documents.length,
+    });
+
+    return updatedVerification;
+  }
+
+  /**
+   * Unapprove a verification request (Development only)
+   * Resets an approved verification back to in_review status for testing purposes
+   */
+  async unapprove(
+    verificationId: string,
+    userId: string,
+    userRole: UserRole
+  ): Promise<VerificationRequest> {
+    // Get verification request
+    const verification = await this.verificationRepository.findById(verificationId);
+    if (!verification) {
+      throw new Error('Verification request not found');
+    }
+
+    // Authorization: Only administrator can unapprove
+    if (userRole !== UserRole.ADMINISTRATOR) {
+      throw new Error('Only administrators can unapprove verifications');
+    }
+
+    // Validate verification is in approved status
+    if (verification.status !== VerificationStatus.APPROVED) {
+      throw new Error('Verification must be approved to be unapproved');
+    }
+
+    // Check if credits were already issued (warning only, don't block)
+    if (this.creditService) {
+      try {
+        const existingCredits = await this.creditService.getCreditsByProject(verification.projectId);
+        if (existingCredits.length > 0) {
+          logger.warn('Unapproving verification with existing credits', {
+            verificationId,
+            projectId: verification.projectId,
+            creditCount: existingCredits.length,
+            unapprovedBy: userId,
+          });
+        }
+      } catch (error) {
+        // Don't fail if we can't check credits
+        logger.warn('Could not check for existing credits during unapprove', { error });
+      }
+    }
+
+    // Reset verification status to "in_review" and progress to 90% (keep most progress)
+    verification.status = VerificationStatus.IN_REVIEW;
+    verification.progress = 90;
+    verification.completedAt = null;
+
+    const updatedVerification = await this.verificationRepository.update(verification);
+
+    // Reset project status to "pending" (Requirement: project should not be verified if verification is not approved)
+    if (this.projectRepository) {
+      const project = await this.projectRepository.findById(verification.projectId);
+      if (project) {
+        project.status = ProjectStatus.PENDING;
+        await this.projectRepository.update(project);
+
+        logger.info('Project status reset to pending after verification unapproval', {
+          projectId: project.id,
+          verificationId,
+          unapprovedBy: userId,
+        });
+      }
+    }
+
+    // Create timeline event
+    const unapproveEvent: VerificationEvent = {
+      id: uuidv4(),
+      verificationId: verification.id,
+      eventType: 'status_changed',
+      message: 'Verification unapproved and reset to in_review status (Development mode)',
+      userId,
+      metadata: {
+        previousStatus: VerificationStatus.APPROVED,
+        newStatus: VerificationStatus.IN_REVIEW,
+        reason: 'Development testing',
+      },
+      createdAt: new Date(),
+    };
+
+    await this.verificationEventRepository.save(unapproveEvent);
+
+    logger.info('Verification unapproved successfully', {
+      verificationId,
+      projectId: verification.projectId,
+      unapprovedBy: userId,
+      status: updatedVerification.status,
+      progress: updatedVerification.progress,
     });
 
     return updatedVerification;

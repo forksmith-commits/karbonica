@@ -174,6 +174,7 @@ This implementation plan breaks down the Karbonica platform development into dis
 
 - [x] 11. Implement authorization middleware
 
+
   - Create authorization middleware for role checking
   - Implement permission validation based on user role
   - Create permission constants for each resource/action
@@ -188,7 +189,9 @@ This implementation plan breaks down the Karbonica platform development into dis
   - Test unauthorized access rejection
   - _Requirements: 8.1-8.11_
 
-- [x] 12. Implement row-level security helpers
+- [ ] 12. Implement row-level security helpers
+
+
 
   - Create query filters for user-owned resources
   - Implement developer project access filter
@@ -401,9 +404,6 @@ This implementation plan breaks down the Karbonica platform development into dis
 
 - [x] 30. Implement Cardano error handling and retry logic
 
-
-
-
   - Implement exponential backoff retry (max 3 attempts)
   - Handle transaction failures
   - Implement fallback mode when Blockfrost unavailable
@@ -422,7 +422,8 @@ This implementation plan breaks down the Karbonica platform development into dis
 
 ## Phase 9: Credit Transfer Operations
 
-- [ ] 31. Implement credit transfer
+- [x] 31. Implement credit transfer
+
   - Create POST /api/v1/credits/:id/transfer endpoint
   - Validate user owns credits
   - Validate transfer quantity (positive, <= owned)

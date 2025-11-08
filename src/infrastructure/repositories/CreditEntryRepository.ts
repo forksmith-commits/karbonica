@@ -1,6 +1,7 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { CreditEntry, CreditStatus } from '../../domain/entities/CreditEntry';
 import { ICreditEntryRepository } from '../../domain/repositories/ICreditEntryRepository';
+import { CreditFilters, PaginationOptions } from '../../application/services/CreditService';
 import { database } from '../../config/database';
 import { logger } from '../../utils/logger';
 
@@ -15,7 +16,8 @@ export class CreditEntryRepository implements ICreditEntryRepository {
     const query = `
       SELECT 
         id, credit_id, project_id, owner_id, quantity, vintage, status,
-        issued_at, last_action_at, created_at, updated_at
+        issued_at, last_action_at, created_at, updated_at,
+        policy_id, asset_name, mint_tx_hash, token_metadata
       FROM credit_entries 
       WHERE id = $1
     `;
@@ -38,7 +40,8 @@ export class CreditEntryRepository implements ICreditEntryRepository {
     const query = `
       SELECT 
         id, credit_id, project_id, owner_id, quantity, vintage, status,
-        issued_at, last_action_at, created_at, updated_at
+        issued_at, last_action_at, created_at, updated_at,
+        policy_id, asset_name, mint_tx_hash, token_metadata
       FROM credit_entries 
       WHERE credit_id = $1
     `;
@@ -57,16 +60,17 @@ export class CreditEntryRepository implements ICreditEntryRepository {
     }
   }
 
-  async findByOwner(ownerId: string, filters?: any, pagination?: any): Promise<CreditEntry[]> {
+  async findByOwner(ownerId: string, filters?: CreditFilters, pagination?: PaginationOptions): Promise<CreditEntry[]> {
     let query = `
       SELECT 
         id, credit_id, project_id, owner_id, quantity, vintage, status,
-        issued_at, last_action_at, created_at, updated_at
+        issued_at, last_action_at, created_at, updated_at,
+        policy_id, asset_name, mint_tx_hash, token_metadata
       FROM credit_entries 
       WHERE owner_id = $1
     `;
 
-    const params: any[] = [ownerId];
+    const params: (string | number | undefined)[] = [ownerId];
     let paramIndex = 2;
 
     // Apply filters
@@ -121,7 +125,8 @@ export class CreditEntryRepository implements ICreditEntryRepository {
     const query = `
       SELECT 
         id, credit_id, project_id, owner_id, quantity, vintage, status,
-        issued_at, last_action_at, created_at, updated_at
+        issued_at, last_action_at, created_at, updated_at,
+        policy_id, asset_name, mint_tx_hash, token_metadata
       FROM credit_entries 
       WHERE project_id = $1
       ORDER BY created_at DESC
@@ -140,11 +145,13 @@ export class CreditEntryRepository implements ICreditEntryRepository {
     const query = `
       INSERT INTO credit_entries (
         id, credit_id, project_id, owner_id, quantity, vintage, status,
-        issued_at, last_action_at, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        issued_at, last_action_at, created_at, updated_at,
+        policy_id, asset_name, mint_tx_hash, token_metadata
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING 
         id, credit_id, project_id, owner_id, quantity, vintage, status,
-        issued_at, last_action_at, created_at, updated_at
+        issued_at, last_action_at, created_at, updated_at,
+        policy_id, asset_name, mint_tx_hash, token_metadata
     `;
 
     const params = [
@@ -159,6 +166,10 @@ export class CreditEntryRepository implements ICreditEntryRepository {
       creditEntry.lastActionAt,
       creditEntry.createdAt,
       creditEntry.updatedAt,
+      creditEntry.policyId || null,
+      creditEntry.assetName || null,
+      creditEntry.mintTxHash || null,
+      creditEntry.tokenMetadata ? JSON.stringify(creditEntry.tokenMetadata) : null,
     ];
 
     try {
@@ -211,7 +222,8 @@ export class CreditEntryRepository implements ICreditEntryRepository {
     const query = `
       SELECT 
         id, credit_id, project_id, owner_id, quantity, vintage, status,
-        issued_at, last_action_at, created_at, updated_at
+        issued_at, last_action_at, created_at, updated_at,
+        policy_id, asset_name, mint_tx_hash, token_metadata
       FROM credit_entries 
       WHERE id = $1
       FOR UPDATE
@@ -250,15 +262,29 @@ export class CreditEntryRepository implements ICreditEntryRepository {
   }
 
   async getProjectSequence(projectId: string): Promise<number> {
+    // Get the project's creation date first
+    const projectQuery = `
+      SELECT created_at FROM projects WHERE id = $1
+    `;
+    
+    const projectResult = await this.pool.query(projectQuery, [projectId]);
+    if (!projectResult.rows[0]) {
+      throw new Error(`Project ${projectId} not found`);
+    }
+    
+    const projectCreatedAt = projectResult.rows[0].created_at;
+    
+    // Count projects created before or at the same time as this project
     const query = `
-      SELECT ROW_NUMBER() OVER (ORDER BY created_at) as sequence
+      SELECT COUNT(*) + 1 as sequence
       FROM projects 
-      WHERE id = $1
+      WHERE created_at <= $1
     `;
 
     try {
-      const result = await this.pool.query(query, [projectId]);
-      return result.rows[0]?.sequence || 1;
+      const result = await this.pool.query(query, [projectCreatedAt]);
+      const sequence = parseInt(result.rows[0]?.sequence || '1', 10);
+      return sequence;
     } catch (error) {
       logger.error('Error getting project sequence', { error, projectId });
       // Fallback: use a hash of the project ID to generate a sequence
@@ -270,16 +296,17 @@ export class CreditEntryRepository implements ICreditEntryRepository {
     }
   }
 
-  async findAll(filters?: any, pagination?: any): Promise<CreditEntry[]> {
+  async findAll(filters?: CreditFilters, pagination?: PaginationOptions): Promise<CreditEntry[]> {
     let query = `
       SELECT 
         id, credit_id, project_id, owner_id, quantity, vintage, status,
-        issued_at, last_action_at, created_at, updated_at
+        issued_at, last_action_at, created_at, updated_at,
+        policy_id, asset_name, mint_tx_hash, token_metadata
       FROM credit_entries 
       WHERE 1=1
     `;
 
-    const params: any[] = [];
+    const params: unknown[] = [];
     let paramIndex = 1;
 
     // Apply filters
@@ -341,9 +368,9 @@ export class CreditEntryRepository implements ICreditEntryRepository {
     }
   }
 
-  async count(filters?: any): Promise<number> {
+  async count(filters?: CreditFilters): Promise<number> {
     let query = 'SELECT COUNT(*) as count FROM credit_entries WHERE 1=1';
-    const params: any[] = [];
+    const params: unknown[] = [];
     let paramIndex = 1;
 
     if (filters?.ownerId) {
@@ -379,7 +406,73 @@ export class CreditEntryRepository implements ICreditEntryRepository {
     }
   }
 
-  private mapRowToCreditEntry(row: any): CreditEntry {
+  async getClient(): Promise<PoolClient> {
+    return await this.pool.connect();
+  }
+
+  async lockForUpdateWithClient(client: PoolClient, id: string): Promise<CreditEntry | null> {
+    const query = `
+      SELECT 
+        id, credit_id, project_id, owner_id, quantity, vintage, status,
+        issued_at, last_action_at, created_at, updated_at,
+        policy_id, asset_name, mint_tx_hash, token_metadata
+      FROM credit_entries 
+      WHERE id = $1
+      FOR UPDATE
+    `;
+
+    try {
+      const result = await client.query(query, [id]);
+
+      if (result.rows.length === 0) {
+        return null;
+      }
+
+      return this.mapRowToCreditEntry(result.rows[0]);
+    } catch (error) {
+      logger.error('Error locking credit entry for update with client', { error, id });
+      throw error;
+    }
+  }
+
+  async updateWithClient(client: PoolClient, creditEntry: CreditEntry): Promise<CreditEntry> {
+    const query = `
+      UPDATE credit_entries 
+      SET 
+        owner_id = $2,
+        quantity = $3,
+        status = $4,
+        last_action_at = $5,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING 
+        id, credit_id, project_id, owner_id, quantity, vintage, status,
+        issued_at, last_action_at, created_at, updated_at
+    `;
+
+    const params = [
+      creditEntry.id,
+      creditEntry.ownerId,
+      creditEntry.quantity,
+      creditEntry.status,
+      creditEntry.lastActionAt,
+    ];
+
+    try {
+      const result = await client.query(query, params);
+
+      if (result.rows.length === 0) {
+        throw new Error('Credit entry not found');
+      }
+
+      return this.mapRowToCreditEntry(result.rows[0]);
+    } catch (error) {
+      logger.error('Error updating credit entry with client', { error, creditEntry });
+      throw error;
+    }
+  }
+
+  private mapRowToCreditEntry(row: Record<string, unknown>): CreditEntry {
     return {
       id: row.id,
       creditId: row.credit_id,
@@ -392,6 +485,10 @@ export class CreditEntryRepository implements ICreditEntryRepository {
       lastActionAt: new Date(row.last_action_at),
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
+      policyId: row.policy_id || undefined,
+      assetName: row.asset_name || undefined,
+      mintTxHash: row.mint_tx_hash || undefined,
+      tokenMetadata: row.token_metadata ? JSON.parse(row.token_metadata) : undefined,
     };
   }
 }

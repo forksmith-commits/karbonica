@@ -21,7 +21,7 @@ export interface VerificationEventResponse {
       eventType: string;
       message: string;
       userId: string;
-      metadata: Record<string, any> | null;
+      metadata: Record<string, unknown> | null;
       createdAt: string;
     };
   };
@@ -40,7 +40,7 @@ export interface VerificationEventListResponse {
       eventType: string;
       message: string;
       userId: string;
-      metadata: Record<string, any> | null;
+      metadata: Record<string, unknown> | null;
       createdAt: string;
     }>;
     count: number;

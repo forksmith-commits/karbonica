@@ -16,6 +16,11 @@ export interface CreditEntryDto {
   lastActionAt: string; // ISO string
   createdAt: string; // ISO string
   updatedAt: string; // ISO string
+  // COT (Carbon Offset Token) blockchain fields
+  policyId?: string;
+  assetName?: string;
+  mintTxHash?: string;
+  tokenMetadata?: Record<string, unknown>;
 }
 
 /**
@@ -30,7 +35,7 @@ export interface CreditTransactionDto {
   quantity: number;
   status: string;
   blockchainTxHash?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   createdAt: string; // ISO string
   completedAt?: string; // ISO string
 }
@@ -114,3 +119,28 @@ export const userCreditsQuerySchema = z.object({
 });
 
 export type UserCreditsQuery = z.infer<typeof userCreditsQuerySchema>;
+
+/**
+ * Credit Transfer Request Schema
+ */
+export const creditTransferRequestSchema = z.object({
+  recipientId: z.string().uuid('Recipient ID must be a valid UUID'),
+  quantity: z.number().positive('Quantity must be positive'),
+});
+
+export type CreditTransferRequest = z.infer<typeof creditTransferRequestSchema>;
+
+/**
+ * Credit Transfer Response
+ */
+export interface CreditTransferResponse {
+  status: 'success';
+  data: {
+    credit: CreditEntryDto;
+    transaction: CreditTransactionDto;
+  };
+  meta: {
+    timestamp: string;
+    requestId: string;
+  };
+}

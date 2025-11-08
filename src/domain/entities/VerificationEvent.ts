@@ -4,7 +4,7 @@ export interface VerificationEvent {
   eventType: string;
   message: string;
   userId: string;
-  metadata: Record<string, any> | null;
+  metadata: Record<string, unknown> | null;
   createdAt: Date;
 }
 
@@ -13,5 +13,5 @@ export interface CreateVerificationEventData {
   eventType: string;
   message: string;
   userId: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }

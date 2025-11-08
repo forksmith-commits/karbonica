@@ -16,6 +16,7 @@ import { projectDocumentsRouter } from './routes/projectDocuments';
 import { verificationsRouter } from './routes/verifications';
 import { creditsRouter } from './routes/credits';
 import { adminUsersRouter } from './routes/admin/users';
+import { cotAdminRouter } from './routes/admin/cot';
 import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
 import { startSessionCleanupScheduler, stopSessionCleanupScheduler } from './utils/sessionCleanup';
@@ -25,8 +26,7 @@ import { CardanoTransactionService } from './domain/services/CardanoTransactionS
 import { PlatformWalletService } from './infrastructure/services/PlatformWalletService';
 import { FileDevVaultService } from './infrastructure/services/VaultService';
 
-import { CardanoMintingService } from './domain/services/CardanoMintingService';
-import { MintingTransactionRepositoryImpl } from './infrastructure/repositories/MintingTransactionRepository';
+
 
 class App {
   public app: Application;
@@ -82,6 +82,7 @@ class App {
     this.app.use(`/api/${config.apiVersion}/credits`, creditsRouter);
     this.app.use(`/api/${config.apiVersion}`, creditsRouter); // For /users/:userId/credits endpoint
     this.app.use(`/api/${config.apiVersion}/admin/users`, adminUsersRouter);
+    this.app.use(`/api/${config.apiVersion}/admin/cot`, cotAdminRouter);
   }
 
   private initializeErrorHandling(): void {

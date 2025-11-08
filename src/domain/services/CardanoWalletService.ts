@@ -272,7 +272,15 @@ export class CardanoWalletService {
 
     const savedWallet = await this.walletRepository.save(wallet);
 
-    logger.info('Wallet linked successfully', { userId, address, walletId: savedWallet.id });
+    // Update user's wallet_address field to match the linked wallet
+    user.walletAddress = address;
+    await this.userRepository.update(user);
+
+    logger.info('Wallet linked successfully and user wallet address updated', {
+      userId,
+      address,
+      walletId: savedWallet.id,
+    });
 
     return savedWallet;
   }
@@ -290,7 +298,17 @@ export class CardanoWalletService {
 
     await this.walletRepository.deleteByUserId(userId);
 
-    logger.info('Wallet unlinked successfully', { userId, address: wallet.address });
+    // Clear user's wallet_address field
+    const user = await this.userRepository.findById(userId);
+    if (user) {
+      user.walletAddress = null;
+      await this.userRepository.update(user);
+    }
+
+    logger.info('Wallet unlinked successfully and user wallet address cleared', {
+      userId,
+      address: wallet.address,
+    });
   }
 
   /**

@@ -8,29 +8,106 @@ import {
   CreditResponse,
   CreditListResponse,
   CreditEntryDto,
+  CreditTransactionDto,
+  CreditTransferResponse,
   creditListQuerySchema,
   userCreditsQuerySchema,
+  creditTransferRequestSchema,
 } from '../application/dto/credit.dto';
 import { authenticate } from '../middleware/authenticate';
-import { authorize } from '../middleware/authorize';
+import { authorize, requireAdmin } from '../middleware/authorize';
 import { UserRole } from '../domain/entities/User';
 import { Resource, Action } from '../middleware/permissions';
 import { logger } from '../utils/logger';
+import { CardanoMintingService } from '../domain/services/CardanoMintingService';
+import { MintingTransactionRepositoryPg } from '../infrastructure/repositories/MintingTransactionRepositoryPg';
+import { getPlatformWalletService } from '../config/platformWallet';
+import { CardanoWalletRepository } from '../infrastructure/repositories/CardanoWalletRepository';
+import { CreditFilters, PaginationOptions } from '../application/services/CreditService';
+import { CreditEntry } from '../domain/entities/CreditEntry';
 
 const router = Router();
 
+// Helper function to map credit to DTO
+const mapCreditToDto = (credit: CreditEntry): CreditEntryDto => ({
+  id: credit.id,
+  creditId: credit.creditId,
+  projectId: credit.projectId,
+  ownerId: credit.ownerId,
+  quantity: credit.quantity,
+  vintage: credit.vintage,
+  status: credit.status,
+  issuedAt: credit.issuedAt.toISOString(),
+  lastActionAt: credit.lastActionAt.toISOString(),
+  createdAt: credit.createdAt.toISOString(),
+  updatedAt: credit.updatedAt.toISOString(),
+  policyId: credit.policyId,
+  assetName: credit.assetName,
+  mintTxHash: credit.mintTxHash,
+  tokenMetadata: credit.tokenMetadata,
+});
+
 // Lazy initialization to avoid database connection issues at module load
-const getCreditService = () => {
+export const getCreditService = () => {
   const creditEntryRepository = new CreditEntryRepository();
   const creditTransactionRepository = new CreditTransactionRepository();
   const projectRepository = new ProjectRepository();
   const userRepository = new UserRepository();
 
+  // Initialize Cardano minting service for token minting
+  let cardanoMintingService: CardanoMintingService | undefined;
+  try {
+    logger.info('Initializing Cardano minting service...');
+    const mintingTxRepository = new MintingTransactionRepositoryPg();
+    logger.info('✅ Minting transaction repository created');
+    
+    logger.info('Attempting to get platform wallet service...');
+    let platformWalletService;
+    try {
+      platformWalletService = getPlatformWalletService();
+      logger.info('✅ Platform wallet service retrieved successfully', {
+        hasService: !!platformWalletService,
+      });
+    } catch (walletError) {
+      logger.error('Failed to get platform wallet service', {
+        error: walletError instanceof Error ? {
+          message: walletError.message,
+          stack: walletError.stack,
+          name: walletError.name,
+        } : walletError,
+      });
+      throw walletError; // Re-throw to be caught by outer catch
+    }
+    
+    logger.info('Creating CardanoMintingService instance...');
+    cardanoMintingService = new CardanoMintingService(mintingTxRepository, platformWalletService);
+    logger.info('✅ Cardano minting service initialized successfully for credit issuance', {
+      hasMintingService: !!cardanoMintingService,
+    });
+  } catch (error) {
+    logger.error('❌ Failed to initialize Cardano minting service - credits will be issued without token minting', {
+      error: error instanceof Error ? {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      } : error,
+      errorString: String(error),
+      errorType: typeof error,
+    });
+    // Continue without minting service - credits will still be issued in database
+    cardanoMintingService = undefined;
+  }
+
+  // Initialize wallet repository to fetch wallet addresses from cardano_wallets table
+  const walletRepository = new CardanoWalletRepository();
+
   return new CreditService(
     creditEntryRepository,
     creditTransactionRepository,
     projectRepository,
-    userRepository
+    userRepository,
+    cardanoMintingService,
+    walletRepository
   );
 };
 
@@ -154,19 +231,7 @@ router.get(
         });
       }
 
-      const creditDto: CreditEntryDto = {
-        id: credit.id,
-        creditId: credit.creditId,
-        projectId: credit.projectId,
-        ownerId: credit.ownerId,
-        quantity: credit.quantity,
-        vintage: credit.vintage,
-        status: credit.status,
-        issuedAt: credit.issuedAt.toISOString(),
-        lastActionAt: credit.lastActionAt.toISOString(),
-        createdAt: credit.createdAt.toISOString(),
-        updatedAt: credit.updatedAt.toISOString(),
-      };
+      const creditDto = mapCreditToDto(credit);
 
       const response: CreditResponse = {
         status: 'success',
@@ -301,8 +366,11 @@ router.get(
 
       const { status, vintage, limit, cursor, sortBy, sortOrder } = queryValidation.data;
 
-      const filters: any = {};
-      const pagination: any = {
+      const filters: CreditFilters = {};
+      if (status) filters.status = status;
+      if (vintage) filters.vintage = vintage;
+      
+      const pagination: PaginationOptions = {
         limit,
         cursor,
         sortBy,
@@ -510,8 +578,11 @@ router.get(
 
       const { status, vintage, limit, cursor, sortBy, sortOrder } = queryValidation.data;
 
-      const filters: any = {};
-      const pagination: any = {
+      const filters: CreditFilters = {};
+      if (status) filters.status = status;
+      if (vintage) filters.vintage = vintage;
+      
+      const pagination: PaginationOptions = {
         limit,
         cursor,
         sortBy,
@@ -592,6 +663,532 @@ router.get(
         currentUserId: req.user?.id,
       });
       return next(error);
+    }
+  }
+);
+
+/**
+ * @swagger
+ * /api/v1/credits/{id}/transfer:
+ *   post:
+ *     summary: Transfer credits to another user
+ *     tags: [Credits]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Credit entry ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - recipientId
+ *               - quantity
+ *             properties:
+ *               recipientId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID of the user receiving the credits
+ *               quantity:
+ *                 type: number
+ *                 minimum: 0.01
+ *                 description: Quantity of credits to transfer
+ *     responses:
+ *       200:
+ *         description: Credits transferred successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     credit:
+ *                       type: object
+ *                       description: Updated credit entry
+ *                     transaction:
+ *                       type: object
+ *                       description: Transfer transaction record
+ *       400:
+ *         description: Bad Request - Invalid input or validation error
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - User does not own the credit
+ *       404:
+ *         description: Credit or recipient not found
+ */
+router.post(
+  '/:id/transfer',
+  authenticate,
+  authorize(Resource.CREDIT, Action.UPDATE),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const creditId = req.params.id;
+      const userId = req.user!.id;
+
+      // Validate request body
+      const bodyValidation = creditTransferRequestSchema.safeParse(req.body);
+      if (!bodyValidation.success) {
+        return res.status(400).json({
+          status: 'error',
+          code: 'VALIDATION_ERROR',
+          title: 'Invalid Request Body',
+          detail: bodyValidation.error.errors
+            .map((e) => `${e.path.join('.')}: ${e.message}`)
+            .join(', '),
+          source: {
+            pointer: bodyValidation.error.errors.map((e) => `/data/${e.path.join('/')}`),
+          },
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId: (req.headers['x-request-id'] as string) || 'unknown',
+          },
+        });
+      }
+
+      const { recipientId, quantity } = bodyValidation.data;
+
+      // Validate user is not transferring to themselves
+      if (recipientId === userId) {
+        return res.status(400).json({
+          status: 'error',
+          code: 'VALIDATION_ERROR',
+          title: 'Invalid Transfer',
+          detail: 'Cannot transfer credits to yourself',
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId: (req.headers['x-request-id'] as string) || 'unknown',
+          },
+        });
+      }
+
+      const creditService = getCreditService();
+
+      // Transfer credits (Requirements 6.1-6.8)
+      const { creditEntry, transaction } = await creditService.transferCredits(
+        creditId,
+        userId,
+        recipientId,
+        quantity
+      );
+
+      // Convert to DTOs
+      const creditDto = mapCreditToDto(creditEntry);
+
+      const transactionDto: CreditTransactionDto = {
+        id: transaction.id,
+        creditId: transaction.creditId,
+        transactionType: transaction.transactionType,
+        senderId: transaction.senderId,
+        recipientId: transaction.recipientId,
+        quantity: transaction.quantity,
+        status: transaction.status,
+        blockchainTxHash: transaction.blockchainTxHash,
+        metadata: transaction.metadata,
+        createdAt: transaction.createdAt.toISOString(),
+        completedAt: transaction.completedAt?.toISOString(),
+      };
+
+      const response: CreditTransferResponse = {
+        status: 'success',
+        data: {
+          credit: creditDto,
+          transaction: transactionDto,
+        },
+        meta: {
+          timestamp: new Date().toISOString(),
+          requestId: (req.headers['x-request-id'] as string) || 'unknown',
+        },
+      };
+
+      res.status(200).json(response);
+    } catch (error: unknown) {
+      logger.error('Error transferring credits', {
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack,
+          name: error.name,
+        } : error,
+        creditId: req.params.id,
+        userId: req.user?.id,
+        body: req.body,
+      });
+
+      // Handle specific error cases
+      if (error instanceof Error && error.message === 'Credit not found') {
+        return res.status(404).json({
+          status: 'error',
+          code: 'NOT_FOUND',
+          title: 'Credit Not Found',
+          detail: 'The requested credit does not exist',
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId: (req.headers['x-request-id'] as string) || 'unknown',
+          },
+        });
+      }
+
+      if (error instanceof Error && error.message === 'Recipient user not found') {
+        return res.status(404).json({
+          status: 'error',
+          code: 'NOT_FOUND',
+          title: 'Recipient Not Found',
+          detail: 'The recipient user does not exist',
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId: (req.headers['x-request-id'] as string) || 'unknown',
+          },
+        });
+      }
+
+      if (error instanceof Error && error.message === 'You do not own this credit') {
+        return res.status(403).json({
+          status: 'error',
+          code: 'FORBIDDEN',
+          title: 'Access Denied',
+          detail: 'You do not have permission to transfer this credit',
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId: (req.headers['x-request-id'] as string) || 'unknown',
+          },
+        });
+      }
+
+      if (
+        error instanceof Error &&
+        (error.message === 'Credit must be active to transfer' ||
+        error.message === 'Transfer quantity must be positive' ||
+        error.message === 'Transfer quantity exceeds owned amount')
+      ) {
+        return res.status(400).json({
+          status: 'error',
+          code: 'VALIDATION_ERROR',
+          title: 'Invalid Transfer',
+          detail: error.message,
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId: (req.headers['x-request-id'] as string) || 'unknown',
+          },
+        });
+      }
+
+      return next(error);
+    }
+  }
+);
+
+/**
+ * @swagger
+ * /api/v1/credits/{id}/retire:
+ *   post:
+ *     summary: Retire credits permanently with COT token burning
+ *     tags: [Credits]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Credit entry ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - quantity
+ *               - reason
+ *             properties:
+ *               quantity:
+ *                 type: number
+ *                 minimum: 0.01
+ *                 description: Quantity of credits to retire
+ *               reason:
+ *                 type: string
+ *                 minLength: 1
+ *                 description: Reason for retirement
+ *     responses:
+ *       200:
+ *         description: Credits retired successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     credit:
+ *                       type: object
+ *                       description: Updated credit entry
+ *                     transaction:
+ *                       type: object
+ *                       description: Retirement transaction record
+ *                     burnTxHash:
+ *                       type: string
+ *                       description: COT token burn transaction hash
+ *                     explorerUrl:
+ *                       type: string
+ *                       description: Cardano Preview explorer link
+ *       400:
+ *         description: Bad Request - Invalid input or validation error
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - User does not own the credit
+ *       404:
+ *         description: Credit not found
+ */
+router.post(
+  '/:id/retire',
+  authenticate,
+  authorize(Resource.CREDIT, Action.UPDATE),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const creditId = req.params.id;
+      const userId = req.user!.id;
+
+      // Validate request body
+      const { quantity, reason } = req.body;
+
+      if (!quantity || quantity <= 0) {
+        return res.status(400).json({
+          status: 'error',
+          code: 'VALIDATION_ERROR',
+          title: 'Invalid Request Body',
+          detail: 'Quantity must be positive',
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId: (req.headers['x-request-id'] as string) || 'unknown',
+          },
+        });
+      }
+
+      if (!reason || reason.trim().length === 0) {
+        return res.status(400).json({
+          status: 'error',
+          code: 'VALIDATION_ERROR',
+          title: 'Invalid Request Body',
+          detail: 'Retirement reason is required',
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId: (req.headers['x-request-id'] as string) || 'unknown',
+          },
+        });
+      }
+
+      const creditService = getCreditService();
+
+      // Retire credits (Requirements 7.1-7.20)
+      const { creditEntry, transaction, burnTxHash } = await creditService.retireCredits(
+        creditId,
+        userId,
+        quantity,
+        reason
+      );
+
+      // Convert to DTOs
+      const creditDto = mapCreditToDto(creditEntry);
+
+      const transactionDto: CreditTransactionDto = {
+        id: transaction.id,
+        creditId: transaction.creditId,
+        transactionType: transaction.transactionType,
+        senderId: transaction.senderId,
+        recipientId: transaction.recipientId,
+        quantity: transaction.quantity,
+        status: transaction.status,
+        blockchainTxHash: transaction.blockchainTxHash,
+        metadata: transaction.metadata,
+        createdAt: transaction.createdAt.toISOString(),
+        completedAt: transaction.completedAt?.toISOString(),
+      };
+
+      // Generate Cardano Preview explorer link
+      const explorerUrl = burnTxHash
+        ? `https://preview.cardanoscan.io/transaction/${burnTxHash}`
+        : undefined;
+
+      const response = {
+        status: 'success',
+        data: {
+          credit: creditDto,
+          transaction: transactionDto,
+          burnTxHash,
+          explorerUrl,
+          certificate: {
+            id: transaction.id,
+            creditId: creditEntry.creditId,
+            quantity: transaction.quantity,
+            reason,
+            retiredAt: transaction.completedAt?.toISOString(),
+            blockchainProof: burnTxHash,
+            explorerUrl,
+          },
+        },
+        meta: {
+          timestamp: new Date().toISOString(),
+          requestId: (req.headers['x-request-id'] as string) || 'unknown',
+        },
+      };
+
+      res.status(200).json(response);
+    } catch (error: unknown) {
+      logger.error('Error retiring credits', {
+        error,
+        creditId: req.params.id,
+        userId: req.user?.id,
+        body: req.body,
+      });
+
+      // Handle specific error cases
+      if (error instanceof Error && error.message === 'Credit not found') {
+        return res.status(404).json({
+          status: 'error',
+          code: 'NOT_FOUND',
+          title: 'Credit Not Found',
+          detail: 'The requested credit does not exist',
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId: (req.headers['x-request-id'] as string) || 'unknown',
+          },
+        });
+      }
+
+      if (error instanceof Error && error.message === 'You do not own this credit') {
+        return res.status(403).json({
+          status: 'error',
+          code: 'FORBIDDEN',
+          title: 'Access Denied',
+          detail: 'You do not have permission to retire this credit',
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId: (req.headers['x-request-id'] as string) || 'unknown',
+          },
+        });
+      }
+
+      if (
+        error instanceof Error &&
+        (error.message === 'Credit must be active to retire' ||
+        error.message === 'Retirement quantity must be positive' ||
+        error.message === 'Retirement quantity exceeds owned amount' ||
+        error.message === 'Retirement reason is required')
+      ) {
+        return res.status(400).json({
+          status: 'error',
+          code: 'VALIDATION_ERROR',
+          title: 'Invalid Retirement',
+          detail: error.message,
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId: (req.headers['x-request-id'] as string) || 'unknown',
+          },
+        });
+      }
+
+      if (error instanceof Error && error.message.includes('Unable to burn COT tokens')) {
+        return res.status(500).json({
+          status: 'error',
+          code: 'BLOCKCHAIN_ERROR',
+          title: 'Token Burning Failed',
+          detail: error.message,
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId: (req.headers['x-request-id'] as string) || 'unknown',
+          },
+        });
+      }
+
+      return next(error);
+    }
+  }
+);
+
+// Admin endpoint to manually trigger credit issuance (for debugging)
+router.post(
+  '/admin/issue-credits',
+  authenticate,
+  requireAdmin,
+  async (req: Request, res: Response, _next: NextFunction) => {
+    try {
+      const { projectId, verificationId } = req.body;
+
+      if (!projectId || !verificationId) {
+        return res.status(400).json({
+          status: 'error',
+          code: 'VALIDATION_ERROR',
+          title: 'Missing Required Fields',
+          detail: 'projectId and verificationId are required',
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId: (req.headers['x-request-id'] as string) || 'unknown',
+          },
+        });
+      }
+
+      const creditService = getCreditService();
+      const { creditEntry, transaction } = await creditService.issueCredits(projectId, verificationId);
+
+      const response: CreditResponse = {
+        status: 'success',
+        data: {
+          credit: mapCreditToDto(creditEntry),
+        },
+        meta: {
+          timestamp: new Date().toISOString(),
+          requestId: (req.headers['x-request-id'] as string) || 'unknown',
+        },
+      };
+
+      logger.info('Manual credit issuance completed', {
+        creditId: creditEntry.creditId,
+        transactionId: transaction.id,
+        projectId,
+        verificationId,
+      });
+
+      return res.status(201).json(response);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An error occurred while issuing credits';
+      logger.error('Error in manual credit issuance', {
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack,
+          name: error.name,
+        } : error,
+        body: req.body,
+      });
+      return res.status(500).json({
+        status: 'error',
+        code: 'INTERNAL_ERROR',
+        title: 'Credit Issuance Failed',
+        detail: errorMessage,
+        meta: {
+          timestamp: new Date().toISOString(),
+          requestId: (req.headers['x-request-id'] as string) || 'unknown',
+        },
+      });
     }
   }
 );

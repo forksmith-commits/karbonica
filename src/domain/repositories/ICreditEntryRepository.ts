@@ -55,4 +55,19 @@ export interface ICreditEntryRepository {
    * Count credit entries with filters
    */
   count(filters?: any): Promise<number>;
+
+  /**
+   * Get database client for transaction management
+   */
+  getClient(): Promise<any>;
+
+  /**
+   * Lock credit entry for update with client (for transactions)
+   */
+  lockForUpdateWithClient(client: any, id: string): Promise<CreditEntry | null>;
+
+  /**
+   * Update credit entry with client (for transactions)
+   */
+  updateWithClient(client: any, creditEntry: CreditEntry): Promise<CreditEntry>;
 }

@@ -48,4 +48,9 @@ export interface ICreditTransactionRepository {
    * Count credit transactions with filters
    */
   count(filters?: any): Promise<number>;
+
+  /**
+   * Save new credit transaction with client (for transactions)
+   */
+  saveWithClient(client: any, creditTransaction: CreditTransaction): Promise<CreditTransaction>;
 }

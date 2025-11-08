@@ -1,16 +1,15 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { VerificationService } from '../application/services/VerificationService';
-import { CreditService } from '../application/services/CreditService';
 import { VerificationRequestRepository } from '../infrastructure/repositories/VerificationRequestRepository';
 import { VerificationEventRepository } from '../infrastructure/repositories/VerificationEventRepository';
 import { VerificationDocumentRepository } from '../infrastructure/repositories/VerificationDocumentRepository';
-import { CreditEntryRepository } from '../infrastructure/repositories/CreditEntryRepository';
-import { CreditTransactionRepository } from '../infrastructure/repositories/CreditTransactionRepository';
 import { UserRepository } from '../infrastructure/repositories/UserRepository';
 import { ProjectRepository } from '../infrastructure/repositories/ProjectRepository';
 import { ConsoleEmailService } from '../infrastructure/services/ConsoleEmailService';
 import { StorageService } from '../infrastructure/services/StorageService';
+// Import getCreditService to ensure minting service is properly initialized
+import { getCreditService } from './credits';
 import {
   VerificationDocumentResponse,
   VerificationDocumentListResponse,
@@ -23,9 +22,12 @@ import {
 } from '../application/dto/verificationEvent.dto';
 import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
+import { requireAdmin } from '../middleware/authorize';
 import { Resource, Action } from '../middleware/permissions';
 import { UserRole } from '../domain/entities/User';
 import { logger } from '../utils/logger';
+import { config } from '../config';
+import { VerificationFilters, PaginationOptions } from '../domain/repositories/IVerificationRequestRepository';
 
 const router = Router();
 
@@ -69,15 +71,9 @@ const getVerificationService = () => {
   const projectRepository = new ProjectRepository();
   const emailService = new ConsoleEmailService();
 
-  // Initialize credit service for automatic credit issuance
-  const creditEntryRepository = new CreditEntryRepository();
-  const creditTransactionRepository = new CreditTransactionRepository();
-  const creditService = new CreditService(
-    creditEntryRepository,
-    creditTransactionRepository,
-    projectRepository,
-    userRepository
-  );
+  // Use getCreditService() to ensure minting service is properly initialized
+  // This ensures COT tokens can be minted when credits are issued
+  const creditService = getCreditService();
 
   return new VerificationService(
     verificationRepository,
@@ -232,8 +228,8 @@ router.get(
       const userId = req.user!.id;
       const userRole = req.user!.role;
 
-      const filters: any = {};
-      const pagination: any = {
+      const filters: VerificationFilters = {};
+      const pagination: PaginationOptions = {
         limit: parseInt(req.query.limit as string) || 20,
         cursor: req.query.cursor as string,
         sortBy: (req.query.sortBy as string) || 'created_at',
@@ -1931,5 +1927,121 @@ router.post(
     }
   }
 );
+
+/**
+ * Development-only endpoint: Unapprove a verification
+ * This allows resetting an approved verification back to in_review for testing
+ * Only available in development mode
+ */
+if (config.env === 'development') {
+  router.post(
+    '/:id/unapprove',
+    authenticate,
+    requireAdmin,
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const verificationId = req.params.id;
+        const userId = req.user!.id;
+        const userRole = req.user!.role;
+
+        const verificationService = getVerificationService();
+        const verification = await verificationService.unapprove(
+          verificationId,
+          userId,
+          userRole as UserRole
+        );
+
+        const response = {
+          status: 'success',
+          data: {
+            verification: {
+              id: verification.id,
+              projectId: verification.projectId,
+              developerId: verification.developerId,
+              verifierId: verification.verifierId,
+              status: verification.status,
+              progress: verification.progress,
+              submittedAt: verification.submittedAt.toISOString(),
+              assignedAt: verification.assignedAt ? verification.assignedAt.toISOString() : null,
+              completedAt: verification.completedAt ? verification.completedAt.toISOString() : null,
+              notes: verification.notes,
+              createdAt: verification.createdAt.toISOString(),
+              updatedAt: verification.updatedAt.toISOString(),
+            },
+            message: 'Verification unapproved and reset to in_review status (Development mode)',
+          },
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId: (req.headers['x-request-id'] as string) || 'unknown',
+            environment: 'development',
+          },
+        };
+
+        logger.info('Verification unapproved successfully (Development mode)', {
+          verificationId,
+          projectId: verification.projectId,
+          unapprovedBy: userId,
+          status: verification.status,
+          progress: verification.progress,
+        });
+
+        res.status(200).json(response);
+      } catch (error) {
+        if (error instanceof Error) {
+          logger.error('Error unapproving verification', {
+            service: 'VerificationUnapproval',
+            error: error.message,
+            verificationId: req.params.id,
+            userId: req.user?.id,
+          });
+
+          // Handle not found errors
+          if (error.message === 'Verification request not found') {
+            return res.status(404).json({
+              status: 'error',
+              code: 'NOT_FOUND',
+              title: 'Verification Not Found',
+              detail: error.message,
+              meta: {
+                timestamp: new Date().toISOString(),
+                requestId: (req.headers['x-request-id'] as string) || 'unknown',
+              },
+            });
+          }
+
+          // Handle authorization errors
+          if (error.message.includes('permission') || error.message.includes('administrator')) {
+            return res.status(403).json({
+              status: 'error',
+              code: 'FORBIDDEN',
+              title: 'Access Denied',
+              detail: error.message,
+              meta: {
+                timestamp: new Date().toISOString(),
+                requestId: (req.headers['x-request-id'] as string) || 'unknown',
+              },
+            });
+          }
+
+          // Handle validation errors
+          if (error.message.includes('must be approved')) {
+            return res.status(400).json({
+              status: 'error',
+              code: 'VALIDATION_ERROR',
+              title: 'Validation Failed',
+              detail: error.message,
+              meta: {
+                timestamp: new Date().toISOString(),
+                requestId: (req.headers['x-request-id'] as string) || 'unknown',
+              },
+            });
+          }
+        }
+
+        return next(error);
+      }
+    }
+  );
+}
 
 export const verificationsRouter = router;

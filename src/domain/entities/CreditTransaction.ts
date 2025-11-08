@@ -26,7 +26,7 @@ export interface CreditTransaction {
   quantity: number; // Decimal(15,2)
   status: TransactionStatus;
   blockchainTxHash?: string; // Cardano transaction hash (nullable)
-  metadata?: Record<string, any>; // JSON metadata
+  metadata?: Record<string, unknown>; // JSON metadata
   createdAt: Date;
   completedAt?: Date;
 }
@@ -37,7 +37,7 @@ export interface CreditTransaction {
 export function createIssuanceMetadata(
   projectId: string,
   verificationId: string
-): Record<string, any> {
+): Record<string, unknown> {
   return {
     projectId,
     verificationId,
@@ -49,7 +49,7 @@ export function createIssuanceMetadata(
 /**
  * Create transfer transaction metadata
  */
-export function createTransferMetadata(reason?: string): Record<string, any> {
+export function createTransferMetadata(reason?: string): Record<string, unknown> {
   return {
     transferReason: reason || 'Credit transfer',
     timestamp: new Date().toISOString(),
@@ -59,7 +59,7 @@ export function createTransferMetadata(reason?: string): Record<string, any> {
 /**
  * Create retirement transaction metadata
  */
-export function createRetirementMetadata(reason: string): Record<string, any> {
+export function createRetirementMetadata(reason: string): Record<string, unknown> {
   return {
     retirementReason: reason,
     timestamp: new Date().toISOString(),
