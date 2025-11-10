@@ -10,6 +10,7 @@ import {
   CreditEntryDto,
   CreditTransactionDto,
   CreditTransferResponse,
+  CreditTransactionHistoryResponse,
   creditListQuerySchema,
   userCreditsQuerySchema,
   creditTransferRequestSchema,
@@ -1232,6 +1233,181 @@ router.post(
           requestId: (req.headers['x-request-id'] as string) || 'unknown',
         },
       });
+    }
+  }
+);
+
+/**
+ * @swagger
+ * /api/v1/credits/{id}/transactions:
+ *   get:
+ *     summary: Get transaction history for a credit
+ *     tags: [Credits]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Credit entry ID
+ *     responses:
+ *       200:
+ *         description: Transaction history retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     transactions:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                           creditId:
+ *                             type: string
+ *                             format: uuid
+ *                           transactionType:
+ *                             type: string
+ *                             enum: [issuance, transfer, retirement]
+ *                           senderId:
+ *                             type: string
+ *                             format: uuid
+ *                             nullable: true
+ *                           recipientId:
+ *                             type: string
+ *                             format: uuid
+ *                             nullable: true
+ *                           quantity:
+ *                             type: number
+ *                             example: 1000.00
+ *                           status:
+ *                             type: string
+ *                             enum: [pending, completed, failed]
+ *                           blockchainTxHash:
+ *                             type: string
+ *                             nullable: true
+ *                             description: Cardano blockchain transaction hash if available
+ *                           metadata:
+ *                             type: object
+ *                             nullable: true
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                           completedAt:
+ *                             type: string
+ *                             format: date-time
+ *                             nullable: true
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - Users can only access transaction history for their own credits
+ *       404:
+ *         description: Credit not found
+ */
+router.get(
+  '/:id/transactions',
+  authenticate,
+  authorize(Resource.CREDIT, Action.READ),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const creditId = req.params.id;
+      const userId = req.user!.id;
+      const userRole = req.user!.role as UserRole;
+
+      const creditService = getCreditService();
+
+      // First, verify the credit exists and user has access to it
+      const credit = await creditService.getCreditById(creditId);
+
+      if (!credit) {
+        return res.status(404).json({
+          status: 'error',
+          code: 'NOT_FOUND',
+          title: 'Credit Not Found',
+          detail: 'The requested credit does not exist',
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId: (req.headers['x-request-id'] as string) || 'unknown',
+          },
+        });
+      }
+
+      // Apply row-level security (Users can only access their own credits)
+      if (userRole !== UserRole.ADMINISTRATOR && credit.ownerId !== userId) {
+        logger.warn('Unauthorized credit transaction history access attempt', {
+          userId,
+          userRole,
+          creditId,
+          creditOwnerId: credit.ownerId,
+        });
+
+        return res.status(403).json({
+          status: 'error',
+          code: 'FORBIDDEN',
+          title: 'Access Denied',
+          detail: 'You do not have permission to view transaction history for this credit',
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId: (req.headers['x-request-id'] as string) || 'unknown',
+          },
+        });
+      }
+
+      // Get transaction history for the credit
+      const transactions = await creditService.getTransactionHistory(creditId);
+
+      // Convert to DTOs
+      const transactionsDto: CreditTransactionDto[] = transactions.map((transaction) => ({
+        id: transaction.id,
+        creditId: transaction.creditId,
+        transactionType: transaction.transactionType,
+        senderId: transaction.senderId,
+        recipientId: transaction.recipientId,
+        quantity: transaction.quantity,
+        status: transaction.status,
+        blockchainTxHash: transaction.blockchainTxHash, // Include blockchain transaction hash if available
+        metadata: transaction.metadata,
+        createdAt: transaction.createdAt.toISOString(),
+        completedAt: transaction.completedAt?.toISOString(),
+      }));
+
+      const response: CreditTransactionHistoryResponse = {
+        status: 'success',
+        data: {
+          transactions: transactionsDto,
+        },
+        meta: {
+          timestamp: new Date().toISOString(),
+          requestId: (req.headers['x-request-id'] as string) || 'unknown',
+        },
+      };
+
+      logger.info('Transaction history retrieved successfully', {
+        creditId,
+        userId,
+        transactionCount: transactions.length,
+      });
+
+      res.status(200).json(response);
+    } catch (error) {
+      logger.error('Error retrieving credit transaction history', {
+        error,
+        creditId: req.params.id,
+        userId: req.user?.id,
+      });
+      return next(error);
     }
   }
 );

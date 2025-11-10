@@ -438,9 +438,6 @@ This implementation plan breaks down the Karbonica platform development into dis
 
 - [x] 32. Optionally record credit transfer on Cardano
 
-
-
-
   - Build Cardano transaction with transfer metadata
   - Submit to Cardano Preview testnet
   - Store transaction hash
@@ -455,7 +452,8 @@ This implementation plan breaks down the Karbonica platform development into dis
   - Test transaction rollback on error
   - _Requirements: 6.1-6.12_
 
-- [ ] 33. Implement credit transaction history
+- [x] 33. Implement credit transaction history
+
   - Create GET /api/v1/credits/:id/transactions endpoint
   - Return all transactions for a credit
   - Include blockchain transaction hash if available
@@ -466,6 +464,8 @@ This implementation plan breaks down the Karbonica platform development into dis
 ## Phase 10: Credit Retirement with Cardano Recording
 
 - [ ] 34. Implement credit retirement
+
+
   - Create POST /api/v1/credits/:id/retire endpoint
   - Validate user owns credits
   - Validate retirement quantity (positive, <= owned)
