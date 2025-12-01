@@ -1,12 +1,16 @@
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions } from 'jsonwebtoken';
 import { config } from '../config';
 
 export interface TokenPayload {
   userId: string;
   email: string;
   role: string;
+}
+
+export interface RefreshTokenPayload {
+  userId: string;
 }
 
 export interface AuthTokens {
@@ -49,15 +53,30 @@ export class CryptoUtils {
    * Generate JWT access and refresh tokens
    */
   static generateAuthTokens(payload: TokenPayload): AuthTokens {
-    // @ts-expect-error - TypeScript has issues with jwt.sign overloads, but this works at runtime
-    const accessToken = jwt.sign(payload, config.jwt.secret, {
-      expiresIn: config.jwt.accessExpiry,
-    });
+    // Type-safe JWT secret
+    const secret: string = config.jwt.secret;
 
-    // @ts-expect-error - TypeScript has issues with jwt.sign overloads, but this works at runtime
-    const refreshToken = jwt.sign({ userId: payload.userId }, config.jwt.secret, {
-      expiresIn: config.jwt.refreshExpiry,
-    });
+    // Access token with full payload
+    const accessTokenPayload: TokenPayload = {
+      userId: payload.userId,
+      email: payload.email,
+      role: payload.role,
+    };
+    const accessToken = jwt.sign(
+      accessTokenPayload,
+      secret,
+      { expiresIn: config.jwt.accessExpiry } as SignOptions
+    );
+
+    // Refresh token with minimal payload
+    const refreshTokenPayload: RefreshTokenPayload = {
+      userId: payload.userId,
+    };
+    const refreshToken = jwt.sign(
+      refreshTokenPayload,
+      secret,
+      { expiresIn: config.jwt.refreshExpiry } as SignOptions
+    );
 
     // Calculate expiry dates
     const accessTokenExpiry = new Date();

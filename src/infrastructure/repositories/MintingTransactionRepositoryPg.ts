@@ -152,7 +152,7 @@ export class MintingTransactionRepositoryPg implements MintingTransactionReposit
 
     // SECURITY FIX: Whitelist allowed columns and directions to prevent SQL injection
     if (options?.order) {
-      const ALLOWED_COLUMNS = ['id', 'credit_id', 'status', 'initiated_at', 'completed_at', 'created_at', 'updated_at'];
+      const ALLOWED_COLUMNS = ['id', 'project_id', 'policy_id', 'asset_name', 'quantity', 'operation', 'tx_hash', 'metadata', 'policy_script', 'created_at', 'updated_at'];
       const ALLOWED_DIRECTIONS = ['asc', 'desc', 'ASC', 'DESC'];
 
       const orderClauses = Object.entries(options.order)

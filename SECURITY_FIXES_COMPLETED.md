@@ -71,18 +71,21 @@ id: `failed_${Date.now()}_${randomBytes(6).toString('hex')}`
 ---
 
 ### 3. Timing Attack in Authentication (CRITICAL)
-**Status:** ✅ FIXED
+**Status:** ✅ FIXED (Enhanced)
 **Files Modified:** AuthService.ts
 
 **What Was Fixed:**
-Password verification timing difference that allowed email enumeration
+Password verification timing difference that allowed email enumeration AND account lock status detection
 
 **How It Was Fixed:**
 ```typescript
 // BEFORE (VULNERABLE):
 const user = await this.userRepository.findByEmail(email);
 if (!user) {
-  throw new Error('Invalid credentials');  // Fast return!
+  throw new Error('Invalid credentials');  // Fast return - timing leak!
+}
+if (user.accountLocked) {
+  throw new Error('Account is locked');  // Another timing leak!
 }
 const isPasswordValid = await CryptoUtils.verifyPassword(password, user.passwordHash);
 
@@ -90,8 +93,15 @@ const isPasswordValid = await CryptoUtils.verifyPassword(password, user.password
 const user = await this.userRepository.findByEmail(email);
 const DUMMY_HASH = '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYIq8r8MiQu';
 const hashToCompare = user?.passwordHash || DUMMY_HASH;
-// Always perform bcrypt comparison - constant time!
+
+// ALWAYS perform bcrypt comparison FIRST (even for locked/missing accounts)
 const isPasswordValid = await CryptoUtils.verifyPassword(password, hashToCompare);
+
+// Check account locked AFTER password verification (prevents timing side-channel)
+if (user?.accountLocked) {
+  throw new Error('Account is locked');
+}
+
 if (!user || !isPasswordValid) {
   throw new Error('Invalid credentials');  // Same error message
 }
@@ -99,8 +109,10 @@ if (!user || !isPasswordValid) {
 
 **Impact:**
 - ✅ Prevents email enumeration via timing analysis
-- ✅ Constant-time authentication check
+- ✅ Prevents account lock status detection via timing side-channel
+- ✅ Constant-time authentication check for ALL cases (missing users, locked accounts, valid users)
 - ✅ Reduces targeted phishing attack surface
+- ✅ Bcrypt runs for every single login attempt regardless of account state
 
 ---
 

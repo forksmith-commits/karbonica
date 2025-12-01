@@ -323,10 +323,18 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
 
     const filters: ProjectFilters = {};
     const sortOrderQuery = req.query.sortOrder as string;
+
+    // SECURITY: Whitelist allowed sort columns to prevent SQL injection
+    const ALLOWED_SORT_COLUMNS = ['created_at', 'updated_at', 'title', 'status', 'type', 'id'];
+    const requestedSortBy = req.query.sortBy as string;
+    const validatedSortBy = ALLOWED_SORT_COLUMNS.includes(requestedSortBy)
+      ? requestedSortBy
+      : 'created_at';
+
     const pagination: PaginationOptions = {
       limit: parseInt(req.query.limit as string) || 20,
       cursor: req.query.cursor as string,
-      sortBy: (req.query.sortBy as string) || 'created_at',
+      sortBy: validatedSortBy,
       sortOrder: sortOrderQuery === 'asc' ? 'asc' : 'desc',
     };
 

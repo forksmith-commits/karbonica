@@ -609,6 +609,8 @@ export interface ICETTokenRepository {
 
 #### `src/application/services/ValidatorAssignmentService.ts`
 ```typescript
+import { randomInt } from 'crypto';
+
 export class ValidatorAssignmentService {
   constructor(
     private validatorAssignmentRepo: IValidatorAssignmentRepository,
@@ -713,11 +715,27 @@ export class ValidatorAssignmentService {
   }
 
   /**
-   * Randomly select N verifiers
+   * Randomly select N verifiers using cryptographically secure Fisher-Yates shuffle
+   * SECURITY: Uses crypto.randomInt() instead of Math.random() to prevent bias
    */
   private selectRandomVerifiers(verifiers: User[], count: number): User[] {
-    const shuffled = [...verifiers].sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, count);
+    // Clamp count to array length
+    const safeCount = Math.min(count, verifiers.length);
+
+    // Create a copy to avoid mutating the original array
+    const shuffled = [...verifiers];
+
+    // Fisher-Yates shuffle with cryptographically secure random
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      // Generate secure random index from 0 to i (inclusive)
+      const j = randomInt(0, i + 1);
+
+      // Swap elements at i and j
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
+    // Return first safeCount elements
+    return shuffled.slice(0, safeCount);
   }
 }
 ```

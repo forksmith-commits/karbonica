@@ -15,6 +15,7 @@ export interface User {
   walletAddress: string | null;
   emailVerified: boolean;
   accountLocked: boolean;
+  lockedUntil: Date | null;
   failedLoginAttempts: number;
   lastLoginAt: Date | null;
   createdAt: Date;

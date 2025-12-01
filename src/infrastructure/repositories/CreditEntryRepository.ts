@@ -91,7 +91,7 @@ export class CreditEntryRepository implements ICreditEntryRepository {
     }
 
     // Apply sorting - SECURITY FIX: Whitelist allowed columns to prevent SQL injection
-    const ALLOWED_SORT_COLUMNS = ['created_at', 'updated_at', 'issued_at', 'quantity', 'status', 'vintage_year', 'id'];
+    const ALLOWED_SORT_COLUMNS = ['created_at', 'updated_at', 'issued_at', 'quantity', 'status', 'vintage', 'id'];
     const sortBy = pagination?.sortBy && ALLOWED_SORT_COLUMNS.includes(pagination.sortBy)
       ? pagination.sortBy
       : 'created_at';
@@ -102,11 +102,9 @@ export class CreditEntryRepository implements ICreditEntryRepository {
     const limit = pagination?.limit && pagination.limit > 0 && pagination.limit <= 100
       ? pagination.limit
       : 20;
-    if (limit) {
-      query += ` LIMIT $${paramIndex}`;
-      params.push(limit);
-      paramIndex++;
-    }
+    query += ` LIMIT $${paramIndex}`;
+    params.push(limit);
+    paramIndex++;
 
     if (pagination?.cursor) {
       // Cursor-based pagination implementation would go here
@@ -345,7 +343,7 @@ export class CreditEntryRepository implements ICreditEntryRepository {
     }
 
     // Apply sorting - SECURITY FIX: Whitelist allowed columns to prevent SQL injection
-    const ALLOWED_SORT_COLUMNS = ['created_at', 'updated_at', 'issued_at', 'quantity', 'status', 'vintage_year', 'id'];
+    const ALLOWED_SORT_COLUMNS = ['created_at', 'updated_at', 'issued_at', 'quantity', 'status', 'vintage', 'id'];
     const sortBy = pagination?.sortBy && ALLOWED_SORT_COLUMNS.includes(pagination.sortBy)
       ? pagination.sortBy
       : 'created_at';
@@ -356,11 +354,9 @@ export class CreditEntryRepository implements ICreditEntryRepository {
     const limit = pagination?.limit && pagination.limit > 0 && pagination.limit <= 100
       ? pagination.limit
       : 20;
-    if (limit) {
-      query += ` LIMIT $${paramIndex}`;
-      params.push(limit);
-      paramIndex++;
-    }
+    query += ` LIMIT $${paramIndex}`;
+    params.push(limit);
+    paramIndex++;
 
     if (pagination?.cursor) {
       // Cursor-based pagination implementation would go here

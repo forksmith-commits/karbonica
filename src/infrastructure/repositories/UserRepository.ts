@@ -12,10 +12,11 @@ export class UserRepository implements IUserRepository {
 
   async findById(id: string): Promise<User | null> {
     const query = `
-      SELECT 
+      SELECT
         id, email, password_hash as "passwordHash", name, company, role,
         wallet_address as "walletAddress", email_verified as "emailVerified",
-        account_locked as "accountLocked", failed_login_attempts as "failedLoginAttempts",
+        account_locked as "accountLocked", locked_until as "lockedUntil",
+        failed_login_attempts as "failedLoginAttempts",
         last_login_at as "lastLoginAt", created_at as "createdAt", updated_at as "updatedAt"
       FROM users
       WHERE id = $1
@@ -27,10 +28,11 @@ export class UserRepository implements IUserRepository {
 
   async findByEmail(email: string): Promise<User | null> {
     const query = `
-      SELECT 
+      SELECT
         id, email, password_hash as "passwordHash", name, company, role,
         wallet_address as "walletAddress", email_verified as "emailVerified",
-        account_locked as "accountLocked", failed_login_attempts as "failedLoginAttempts",
+        account_locked as "accountLocked", locked_until as "lockedUntil",
+        failed_login_attempts as "failedLoginAttempts",
         last_login_at as "lastLoginAt", created_at as "createdAt", updated_at as "updatedAt"
       FROM users
       WHERE email = $1
@@ -42,10 +44,11 @@ export class UserRepository implements IUserRepository {
 
   async findByWalletAddress(address: string): Promise<User | null> {
     const query = `
-      SELECT 
+      SELECT
         id, email, password_hash as "passwordHash", name, company, role,
         wallet_address as "walletAddress", email_verified as "emailVerified",
-        account_locked as "accountLocked", failed_login_attempts as "failedLoginAttempts",
+        account_locked as "accountLocked", locked_until as "lockedUntil",
+        failed_login_attempts as "failedLoginAttempts",
         last_login_at as "lastLoginAt", created_at as "createdAt", updated_at as "updatedAt"
       FROM users
       WHERE wallet_address = $1
@@ -59,14 +62,15 @@ export class UserRepository implements IUserRepository {
     const query = `
       INSERT INTO users (
         id, email, password_hash, name, company, role,
-        wallet_address, email_verified, account_locked, failed_login_attempts,
-        last_login_at, created_at, updated_at
+        wallet_address, email_verified, account_locked, locked_until,
+        failed_login_attempts, last_login_at, created_at, updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-      RETURNING 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      RETURNING
         id, email, password_hash as "passwordHash", name, company, role,
         wallet_address as "walletAddress", email_verified as "emailVerified",
-        account_locked as "accountLocked", failed_login_attempts as "failedLoginAttempts",
+        account_locked as "accountLocked", locked_until as "lockedUntil",
+        failed_login_attempts as "failedLoginAttempts",
         last_login_at as "lastLoginAt", created_at as "createdAt", updated_at as "updatedAt"
     `;
 
@@ -80,6 +84,7 @@ export class UserRepository implements IUserRepository {
       user.walletAddress,
       user.emailVerified,
       user.accountLocked,
+      user.lockedUntil,
       user.failedLoginAttempts,
       user.lastLoginAt,
       user.createdAt,
@@ -93,7 +98,7 @@ export class UserRepository implements IUserRepository {
   async update(user: User): Promise<User> {
     const query = `
       UPDATE users
-      SET 
+      SET
         email = $2,
         password_hash = $3,
         name = $4,
@@ -102,14 +107,16 @@ export class UserRepository implements IUserRepository {
         wallet_address = $7,
         email_verified = $8,
         account_locked = $9,
-        failed_login_attempts = $10,
-        last_login_at = $11,
-        updated_at = $12
+        locked_until = $10,
+        failed_login_attempts = $11,
+        last_login_at = $12,
+        updated_at = $13
       WHERE id = $1
-      RETURNING 
+      RETURNING
         id, email, password_hash as "passwordHash", name, company, role,
         wallet_address as "walletAddress", email_verified as "emailVerified",
-        account_locked as "accountLocked", failed_login_attempts as "failedLoginAttempts",
+        account_locked as "accountLocked", locked_until as "lockedUntil",
+        failed_login_attempts as "failedLoginAttempts",
         last_login_at as "lastLoginAt", created_at as "createdAt", updated_at as "updatedAt"
     `;
 
@@ -123,6 +130,7 @@ export class UserRepository implements IUserRepository {
       user.walletAddress,
       user.emailVerified,
       user.accountLocked,
+      user.lockedUntil,
       user.failedLoginAttempts,
       user.lastLoginAt,
       new Date(),
@@ -139,10 +147,11 @@ export class UserRepository implements IUserRepository {
 
   async findAll(limit: number = 20, offset: number = 0): Promise<User[]> {
     const query = `
-      SELECT 
+      SELECT
         id, email, password_hash as "passwordHash", name, company, role,
         wallet_address as "walletAddress", email_verified as "emailVerified",
-        account_locked as "accountLocked", failed_login_attempts as "failedLoginAttempts",
+        account_locked as "accountLocked", locked_until as "lockedUntil",
+        failed_login_attempts as "failedLoginAttempts",
         last_login_at as "lastLoginAt", created_at as "createdAt", updated_at as "updatedAt"
       FROM users
       ORDER BY created_at DESC
