@@ -192,6 +192,7 @@ export class AuthService {
       if (user.lockedUntil <= now) {
         // Lock has expired - auto-unlock
         try {
+          const originalLockedUntil = user.lockedUntil;
           user.accountLocked = false;
           user.lockedUntil = null;
           user.failedLoginAttempts = 0;
@@ -199,7 +200,7 @@ export class AuthService {
           logger.info('Account auto-unlocked after lock expiry', {
             userId: user.id,
             email: user.email,
-            lockedUntil: user.lockedUntil,
+            lockedUntil: originalLockedUntil,
           });
         } catch (error) {
           logger.error('Failed to auto-unlock account', {
