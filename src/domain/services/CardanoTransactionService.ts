@@ -1,4 +1,5 @@
 import { BlockfrostProvider, MeshTxBuilder } from '@meshsdk/core';
+import { randomBytes } from 'crypto';
 
 import { PlatformWalletService } from '../../infrastructure/services/PlatformWalletService';
 import { getCardanoConfig } from '../../config/cardano';
@@ -281,7 +282,8 @@ export class CardanoTransactionService {
       // Create a pending transaction record for later processing
       const blockchainTx: BlockchainTransaction = {
         id: this.generateTransactionId(),
-        txHash: `fallback_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+        // SECURITY FIX: Use crypto.randomBytes() instead of Math.random()
+        txHash: `fallback_${Date.now()}_${randomBytes(6).toString('hex')}`,
         status: 'pending',
         submissionTimestamp: new Date(),
         retryCount: 0,
@@ -370,7 +372,8 @@ export class CardanoTransactionService {
     }
   }
   private generateTransactionId(): string {
-    return `tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // SECURITY FIX: Use crypto.randomBytes() instead of Math.random()
+    return `tx_${Date.now()}_${randomBytes(6).toString('hex')}`;
   }
 
   /**

@@ -22,7 +22,7 @@ export class SmtpEmailService implements IEmailService {
     });
 
     // Verify connection configuration
-    this.transporter.verify((error, success) => {
+    this.transporter.verify((error, _success) => {
       if (error) {
         logger.error('SMTP connection failed', { error });
       } else {

@@ -150,11 +150,22 @@ export class MintingTransactionRepositoryPg implements MintingTransactionReposit
       query += ` WHERE ${conditions.join(' AND ')}`;
     }
 
+    // SECURITY FIX: Whitelist allowed columns and directions to prevent SQL injection
     if (options?.order) {
-      const orderBy = Object.entries(options.order)
-        .map(([key, direction]) => `${this.camelToSnake(key)} ${direction}`)
-        .join(', ');
-      query += ` ORDER BY ${orderBy}`;
+      const ALLOWED_COLUMNS = ['id', 'credit_id', 'status', 'initiated_at', 'completed_at', 'created_at', 'updated_at'];
+      const ALLOWED_DIRECTIONS = ['asc', 'desc', 'ASC', 'DESC'];
+
+      const orderClauses = Object.entries(options.order)
+        .filter(([key, direction]) => {
+          const snakeKey = this.camelToSnake(key);
+          return ALLOWED_COLUMNS.includes(snakeKey) &&
+                 ALLOWED_DIRECTIONS.includes(direction.toString());
+        })
+        .map(([key, direction]) => `${this.camelToSnake(key)} ${direction}`);
+
+      if (orderClauses.length > 0) {
+        query += ` ORDER BY ${orderClauses.join(', ')}`;
+      }
     }
 
     try {
@@ -346,12 +357,10 @@ export class MintingTransactionRepositoryPg implements MintingTransactionReposit
     return str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
   }
 
+  // SECURITY FIX: Use crypto.randomUUID() instead of Math.random()
   private generateUUID(): string {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-      const r = (Math.random() * 16) | 0;
-      const v = c === 'x' ? r : (r & 0x3) | 0x8;
-      return v.toString(16);
-    });
+    // Use Node.js built-in crypto.randomUUID() which is cryptographically secure
+    return require('crypto').randomUUID();
   }
 }
 

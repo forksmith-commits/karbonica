@@ -8,9 +8,9 @@
  * Requirements: 15.2, 15.18
  */
 
-import { VaultService, VaultError } from './VaultService';
+import { VaultService } from './VaultService';
 // import { initializeBlockfrostClient, getCardanoConfig } from '../../config/cardano';
-import { MeshWallet, BlockfrostProvider, MeshTxBuilder } from '@meshsdk/core';
+import { MeshWallet, BlockfrostProvider } from '@meshsdk/core';
 
 import { getCardanoConfig } from '../../config/cardano';
 import { logger } from '../../utils/logger';
@@ -96,10 +96,10 @@ export class PlatformWalletService {
         error:
           error instanceof Error
             ? {
-                name: error.name,
-                message: error.message,
-                stack: error.stack,
-              }
+              name: error.name,
+              message: error.message,
+              stack: error.stack,
+            }
             : error,
       });
       throw new PlatformWalletError('Failed to initialize platform wallet', error as Error);
@@ -207,11 +207,11 @@ export class PlatformWalletService {
         error:
           error instanceof Error
             ? {
-                name: error.name,
-                message: error.message,
-                stack: error.stack,
-                cause: error.cause,
-              }
+              name: error.name,
+              message: error.message,
+              stack: error.stack,
+              cause: error.cause,
+            }
             : error,
       });
       throw new PlatformWalletError('Failed to create platform wallet', error as Error);

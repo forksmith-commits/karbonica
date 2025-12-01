@@ -56,7 +56,7 @@ export class StorageService {
 
     try {
       // Upload to Supabase Storage
-      const { data, error } = await this.supabase.storage.from(this.bucket).upload(key, buffer, {
+      const { error } = await this.supabase.storage.from(this.bucket).upload(key, buffer, {
         contentType: mimeType,
         cacheControl: '3600',
         upsert: false,

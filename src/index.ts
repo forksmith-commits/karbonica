@@ -43,11 +43,19 @@ class App {
   private initializeMiddleware(): void {
     // Security middleware
     this.app.use(helmet());
-    this.app.use(cors());
 
-    // Body parsing middleware
-    this.app.use(express.json());
-    this.app.use(express.urlencoded({ extended: true }));
+    // SECURITY FIX: Configure CORS to only allow requests from trusted origins
+    this.app.use(cors({
+      origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+      credentials: true,
+      optionsSuccessStatus: 200,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+    }));
+
+    // Body parsing middleware with size limits to prevent DoS
+    this.app.use(express.json({ limit: '10mb' }));
+    this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
     // Request logging middleware
     this.app.use(requestLogger);

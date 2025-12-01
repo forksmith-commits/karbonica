@@ -27,7 +27,7 @@ const SESSION_INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
  */
 export const authenticate = async (
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
@@ -120,7 +120,7 @@ export const authenticate = async (
  */
 export const optionalAuthenticate = async (
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
@@ -132,7 +132,7 @@ export const optionalAuthenticate = async (
     }
 
     // If token is provided, validate it
-    await authenticate(req, res, next);
+    await authenticate(req, _res, next);
   } catch (error) {
     // If authentication fails with optional auth, continue without user
     next();

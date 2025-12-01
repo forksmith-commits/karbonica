@@ -4,8 +4,7 @@ import { MintingTransactionRepository } from '../../domain/repositories/IMinting
 
 export class MintingTransactionRepositoryImpl
   extends Repository<MintingTransaction>
-  implements MintingTransactionRepository
-{
+  implements MintingTransactionRepository {
   async findByProjectId(projectId: string): Promise<MintingTransaction[]> {
     return this.find({
       where: { projectId },

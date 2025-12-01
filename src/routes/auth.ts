@@ -499,7 +499,7 @@ router.post(
             company: result.user.company,
             role: result.user.role,
             emailVerified: result.user.emailVerified,
-            walletAddress: result.user.walletAddress,
+            walletAddress: result.user.walletAddress ?? '',
             lastLoginAt: result.user.lastLoginAt,
           },
           tokens: result.tokens,

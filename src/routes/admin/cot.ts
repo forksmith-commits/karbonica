@@ -73,7 +73,7 @@ router.get(
   '/metrics/export',
   authenticate,
   authorize(Resource.ADMIN, Action.READ),
-  async (req: Request, res: Response, next: NextFunction) => {
+  async (_req: Request, res: Response, next: NextFunction) => {
     try {
       const metricsText = cotMonitoringService.exportMetrics();
 

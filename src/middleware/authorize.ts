@@ -12,7 +12,7 @@ import { logger } from '../utils/logger';
  * Based on Requirements 8.1-8.11
  */
 export function authorize(resource: Resource, action: Action) {
-  return (req: Request, res: Response, next: NextFunction): void => {
+  return (req: Request, _res: Response, next: NextFunction): void => {
     try {
       // User must be authenticated first
       if (!req.user) {
@@ -64,7 +64,7 @@ export function authorize(resource: Resource, action: Action) {
  * Useful for endpoints that require a specific role
  */
 export function requireRole(...allowedRoles: UserRole[]) {
-  return (req: Request, res: Response, next: NextFunction): void => {
+  return (req: Request, _res: Response, next: NextFunction): void => {
     try {
       if (!req.user) {
         throw new AuthorizationError('Authentication required');

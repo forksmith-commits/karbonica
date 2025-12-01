@@ -6,7 +6,7 @@ import { logger } from '../utils/logger';
 
 export const healthRouter = Router();
 
-healthRouter.get('/', async (req: Request, res: Response) => {
+healthRouter.get('/', async (_req: Request, res: Response) => {
   try {
     // Check database connectivity
     const dbHealthy = await database.healthCheck();

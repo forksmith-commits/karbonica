@@ -229,24 +229,25 @@ router.get(
       const userRole = req.user!.role;
 
       const filters: VerificationFilters = {};
+      const sortOrderQuery = req.query.sortOrder as string;
       const pagination: PaginationOptions = {
         limit: parseInt(req.query.limit as string) || 20,
         cursor: req.query.cursor as string,
         sortBy: (req.query.sortBy as string) || 'created_at',
-        sortOrder: (req.query.sortOrder as string) || 'desc',
+        sortOrder: sortOrderQuery === 'asc' ? 'asc' : 'desc',
       };
 
       // Apply filters based on query parameters
       if (req.query.status) {
-        filters.status = req.query.status;
+        filters.status = req.query.status as string;
       }
 
       if (req.query.developerId) {
-        filters.developerId = req.query.developerId;
+        filters.developerId = req.query.developerId as string;
       }
 
       if (req.query.verifierId) {
-        filters.verifierId = req.query.verifierId;
+        filters.verifierId = req.query.verifierId as string;
       }
 
       const verificationRepository = getVerificationRepository();

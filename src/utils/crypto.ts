@@ -49,12 +49,14 @@ export class CryptoUtils {
    * Generate JWT access and refresh tokens
    */
   static generateAuthTokens(payload: TokenPayload): AuthTokens {
+    // @ts-expect-error - TypeScript has issues with jwt.sign overloads, but this works at runtime
     const accessToken = jwt.sign(payload, config.jwt.secret, {
-      expiresIn: config.jwt.accessExpiry, // 15 minutes
+      expiresIn: config.jwt.accessExpiry,
     });
 
+    // @ts-expect-error - TypeScript has issues with jwt.sign overloads, but this works at runtime
     const refreshToken = jwt.sign({ userId: payload.userId }, config.jwt.secret, {
-      expiresIn: config.jwt.refreshExpiry, // 7 days
+      expiresIn: config.jwt.refreshExpiry,
     });
 
     // Calculate expiry dates

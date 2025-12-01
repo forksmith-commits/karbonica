@@ -12,6 +12,7 @@ export enum Resource {
   USER = 'user',
   AUDIT_LOG = 'audit_log',
   WALLET = 'wallet',
+  ADMIN = 'admin',
 }
 
 export enum Action {
@@ -40,6 +41,7 @@ export const PERMISSIONS: Record<UserRole, Record<Resource, Action[]>> = {
     [Resource.USER]: [Action.READ, Action.UPDATE], // Own profile only
     [Resource.AUDIT_LOG]: [], // No access
     [Resource.WALLET]: [Action.LINK, Action.UNLINK, Action.READ],
+    [Resource.ADMIN]: [], // No access
   },
   [UserRole.VERIFIER]: {
     [Resource.PROJECT]: [Action.READ], // Can view projects under verification
@@ -48,6 +50,7 @@ export const PERMISSIONS: Record<UserRole, Record<Resource, Action[]>> = {
     [Resource.USER]: [Action.READ, Action.UPDATE], // Own profile only
     [Resource.AUDIT_LOG]: [], // No access
     [Resource.WALLET]: [Action.LINK, Action.UNLINK, Action.READ],
+    [Resource.ADMIN]: [], // No access
   },
   [UserRole.ADMINISTRATOR]: {
     [Resource.PROJECT]: [Action.CREATE, Action.READ, Action.UPDATE, Action.DELETE],
@@ -62,6 +65,7 @@ export const PERMISSIONS: Record<UserRole, Record<Resource, Action[]>> = {
     [Resource.USER]: [Action.CREATE, Action.READ, Action.UPDATE, Action.DELETE],
     [Resource.AUDIT_LOG]: [Action.READ],
     [Resource.WALLET]: [Action.LINK, Action.UNLINK, Action.READ],
+    [Resource.ADMIN]: [Action.CREATE, Action.READ, Action.UPDATE, Action.DELETE],
   },
   [UserRole.BUYER]: {
     [Resource.PROJECT]: [Action.READ], // Can only view verified projects
@@ -70,6 +74,7 @@ export const PERMISSIONS: Record<UserRole, Record<Resource, Action[]>> = {
     [Resource.USER]: [Action.READ, Action.UPDATE], // Own profile only
     [Resource.AUDIT_LOG]: [], // No access
     [Resource.WALLET]: [Action.LINK, Action.UNLINK, Action.READ],
+    [Resource.ADMIN]: [], // No access
   },
 };
 

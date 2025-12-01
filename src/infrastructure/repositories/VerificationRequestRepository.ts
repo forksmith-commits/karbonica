@@ -71,9 +71,17 @@ export class VerificationRequestRepository implements IVerificationRequestReposi
       paramIndex++;
     }
 
-    const sortBy = pagination?.sortBy || 'created_at';
-    const sortOrder = pagination?.sortOrder || 'desc';
-    const limit = pagination?.limit || 20;
+    // SECURITY FIX: Whitelist allowed sort columns to prevent SQL injection
+    const ALLOWED_SORT_COLUMNS = ['created_at', 'updated_at', 'submitted_at', 'assigned_at', 'completed_at', 'reviewed_at', 'status', 'id'];
+    const sortBy = pagination?.sortBy && ALLOWED_SORT_COLUMNS.includes(pagination.sortBy)
+      ? pagination.sortBy
+      : 'created_at';
+
+    const sortOrder = pagination?.sortOrder?.toLowerCase() === 'asc' ? 'asc' : 'desc';
+
+    const limit = pagination?.limit && pagination.limit > 0 && pagination.limit <= 100
+      ? pagination.limit
+      : 20;
 
     // Cursor-based pagination
     if (pagination?.cursor) {
@@ -87,7 +95,7 @@ export class VerificationRequestRepository implements IVerificationRequestReposi
     const whereClause = conditions.join(' AND ');
 
     const query = `
-      SELECT 
+      SELECT
         id, project_id as "projectId", developer_id as "developerId",
         verifier_id as "verifierId", status, progress,
         submitted_at as "submittedAt", assigned_at as "assignedAt",
@@ -120,9 +128,17 @@ export class VerificationRequestRepository implements IVerificationRequestReposi
       paramIndex++;
     }
 
-    const sortBy = pagination?.sortBy || 'created_at';
-    const sortOrder = pagination?.sortOrder || 'desc';
-    const limit = pagination?.limit || 20;
+    // SECURITY FIX: Whitelist allowed sort columns to prevent SQL injection
+    const ALLOWED_SORT_COLUMNS = ['created_at', 'updated_at', 'submitted_at', 'assigned_at', 'completed_at', 'reviewed_at', 'status', 'id'];
+    const sortBy = pagination?.sortBy && ALLOWED_SORT_COLUMNS.includes(pagination.sortBy)
+      ? pagination.sortBy
+      : 'created_at';
+
+    const sortOrder = pagination?.sortOrder?.toLowerCase() === 'asc' ? 'asc' : 'desc';
+
+    const limit = pagination?.limit && pagination.limit > 0 && pagination.limit <= 100
+      ? pagination.limit
+      : 20;
 
     // Cursor-based pagination
     if (pagination?.cursor) {
@@ -136,7 +152,7 @@ export class VerificationRequestRepository implements IVerificationRequestReposi
     const whereClause = conditions.join(' AND ');
 
     const query = `
-      SELECT 
+      SELECT
         id, project_id as "projectId", developer_id as "developerId",
         verifier_id as "verifierId", status, progress,
         submitted_at as "submittedAt", assigned_at as "assignedAt",

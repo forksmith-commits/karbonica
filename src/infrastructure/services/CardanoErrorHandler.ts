@@ -1,5 +1,6 @@
 import { logger } from '../../utils/logger';
 import { BlockchainTransactionRepository } from '../../domain/repositories/IBlockchainTransactionRepository';
+import { randomBytes } from 'crypto';
 
 export interface RetryConfig {
   maxAttempts: number;
@@ -107,7 +108,8 @@ export class CardanoErrorHandler {
         // If this is the last attempt, queue for manual review
         if (attempt === this.retryConfig.maxAttempts) {
           await this.queueForManualReview({
-            id: `failed_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+            // SECURITY FIX: Use crypto.randomBytes() instead of Math.random()
+            id: `failed_${Date.now()}_${randomBytes(6).toString('hex')}`,
             txHash: context.txHash,
             error: lastError.message,
             timestamp: new Date(),

@@ -77,25 +77,31 @@ export class CreditTransactionRepository implements ICreditTransactionRepository
     // Apply filters
     if (filters?.transactionType) {
       query += ` AND transaction_type = $${paramIndex}`;
-      params.push(filters.transactionType);
+      params.push(filters.transactionType as string);
       paramIndex++;
     }
 
     if (filters?.status) {
       query += ` AND status = $${paramIndex}`;
-      params.push(filters.status);
+      params.push(filters.status as string);
       paramIndex++;
     }
 
-    // Apply sorting
-    const sortBy = pagination?.sortBy || 'created_at';
-    const sortOrder = pagination?.sortOrder || 'desc';
+    // Apply sorting - SECURITY FIX: Whitelist allowed columns to prevent SQL injection
+    const ALLOWED_SORT_COLUMNS = ['created_at', 'updated_at', 'completed_at', 'quantity', 'status', 'transaction_type', 'id'];
+    const sortBy = pagination?.sortBy && ALLOWED_SORT_COLUMNS.includes(pagination.sortBy)
+      ? pagination.sortBy
+      : 'created_at';
+    const sortOrder = pagination?.sortOrder?.toLowerCase() === 'asc' ? 'asc' : 'desc';
     query += ` ORDER BY ${sortBy} ${sortOrder}`;
 
-    // Apply pagination
-    if (pagination?.limit) {
+    // Apply pagination - SECURITY FIX: Validate limit to prevent memory exhaustion
+    const limit = pagination?.limit && pagination.limit > 0 && pagination.limit <= 100
+      ? pagination.limit
+      : 20;
+    if (limit) {
       query += ` LIMIT $${paramIndex}`;
-      params.push(pagination.limit);
+      params.push(limit);
       paramIndex++;
     }
 
@@ -137,25 +143,31 @@ export class CreditTransactionRepository implements ICreditTransactionRepository
     // Apply filters
     if (filters?.transactionType) {
       query += ` AND transaction_type = $${paramIndex}`;
-      params.push(filters.transactionType);
+      params.push(filters.transactionType as string);
       paramIndex++;
     }
 
     if (filters?.status) {
       query += ` AND status = $${paramIndex}`;
-      params.push(filters.status);
+      params.push(filters.status as string);
       paramIndex++;
     }
 
-    // Apply sorting
-    const sortBy = pagination?.sortBy || 'created_at';
-    const sortOrder = pagination?.sortOrder || 'desc';
+    // Apply sorting - SECURITY FIX: Whitelist allowed columns to prevent SQL injection
+    const ALLOWED_SORT_COLUMNS = ['created_at', 'updated_at', 'completed_at', 'quantity', 'status', 'transaction_type', 'id'];
+    const sortBy = pagination?.sortBy && ALLOWED_SORT_COLUMNS.includes(pagination.sortBy)
+      ? pagination.sortBy
+      : 'created_at';
+    const sortOrder = pagination?.sortOrder?.toLowerCase() === 'asc' ? 'asc' : 'desc';
     query += ` ORDER BY ${sortBy} ${sortOrder}`;
 
-    // Apply pagination
-    if (pagination?.limit) {
+    // Apply pagination - SECURITY FIX: Validate limit to prevent memory exhaustion
+    const limit = pagination?.limit && pagination.limit > 0 && pagination.limit <= 100
+      ? pagination.limit
+      : 20;
+    if (limit) {
       query += ` LIMIT $${paramIndex}`;
-      params.push(pagination.limit);
+      params.push(limit);
       paramIndex++;
     }
 
@@ -197,31 +209,37 @@ export class CreditTransactionRepository implements ICreditTransactionRepository
     // Apply filters
     if (filters?.status) {
       query += ` AND status = $${paramIndex}`;
-      params.push(filters.status);
+      params.push(filters.status as string);
       paramIndex++;
     }
 
     if (filters?.senderId) {
       query += ` AND sender_id = $${paramIndex}`;
-      params.push(filters.senderId);
+      params.push(filters.senderId as string);
       paramIndex++;
     }
 
     if (filters?.recipientId) {
       query += ` AND recipient_id = $${paramIndex}`;
-      params.push(filters.recipientId);
+      params.push(filters.recipientId as string);
       paramIndex++;
     }
 
-    // Apply sorting
-    const sortBy = pagination?.sortBy || 'created_at';
-    const sortOrder = pagination?.sortOrder || 'desc';
+    // Apply sorting - SECURITY FIX: Whitelist allowed columns to prevent SQL injection
+    const ALLOWED_SORT_COLUMNS = ['created_at', 'updated_at', 'completed_at', 'quantity', 'status', 'transaction_type', 'id'];
+    const sortBy = pagination?.sortBy && ALLOWED_SORT_COLUMNS.includes(pagination.sortBy)
+      ? pagination.sortBy
+      : 'created_at';
+    const sortOrder = pagination?.sortOrder?.toLowerCase() === 'asc' ? 'asc' : 'desc';
     query += ` ORDER BY ${sortBy} ${sortOrder}`;
 
-    // Apply pagination
-    if (pagination?.limit) {
+    // Apply pagination - SECURITY FIX: Validate limit to prevent memory exhaustion
+    const limit = pagination?.limit && pagination.limit > 0 && pagination.limit <= 100
+      ? pagination.limit
+      : 20;
+    if (limit) {
       query += ` LIMIT $${paramIndex}`;
-      params.push(pagination.limit);
+      params.push(limit);
       paramIndex++;
     }
 
@@ -397,21 +415,21 @@ export class CreditTransactionRepository implements ICreditTransactionRepository
 
   private mapRowToCreditTransaction(row: Record<string, unknown>): CreditTransaction {
     return {
-      id: row.id,
-      creditId: row.credit_id,
+      id: row.id as string,
+      creditId: row.credit_id as string,
       transactionType: row.transaction_type as TransactionType,
-      senderId: row.sender_id,
-      recipientId: row.recipient_id,
-      quantity: parseFloat(row.quantity),
+      senderId: row.sender_id as string | undefined,
+      recipientId: row.recipient_id as string | undefined,
+      quantity: parseFloat(row.quantity as string),
       status: row.status as TransactionStatus,
-      blockchainTxHash: row.blockchain_tx_hash,
+      blockchainTxHash: row.blockchain_tx_hash as string | undefined,
       metadata: row.metadata
         ? typeof row.metadata === 'string'
           ? JSON.parse(row.metadata)
           : row.metadata
         : undefined,
-      createdAt: new Date(row.created_at),
-      completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
+      createdAt: new Date(row.created_at as string),
+      completedAt: row.completed_at ? new Date(row.completed_at as string) : undefined,
     };
   }
 }

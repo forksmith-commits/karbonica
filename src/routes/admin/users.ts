@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
 import { UserRepository } from '../../infrastructure/repositories/UserRepository';
-import { EmailVerificationTokenRepository } from '../../infrastructure/repositories/EmailVerificationTokenRepository';
 import { authenticate } from '../../middleware/authenticate';
 
 const router = Router();
@@ -116,7 +115,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 
     const { passwordHash, ...userWithoutPassword } = user;
 
-    res.json({
+    return res.json({
       status: 'success',
       data: { user: userWithoutPassword },
       meta: {
@@ -125,7 +124,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       status: 'error',
       code: 'INTERNAL_ERROR',
       title: 'Internal Server Error',
@@ -179,7 +178,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     await userRepository.delete(req.params.id);
 
-    res.json({
+    return res.json({
       status: 'success',
       data: {
         message: 'User deleted successfully',
@@ -191,7 +190,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       status: 'error',
       code: 'INTERNAL_ERROR',
       title: 'Internal Server Error',
@@ -245,7 +244,7 @@ router.delete('/email/:email', async (req: Request, res: Response) => {
 
     await userRepository.delete(user.id);
 
-    res.json({
+    return res.json({
       status: 'success',
       data: {
         message: 'User deleted successfully',
@@ -258,7 +257,7 @@ router.delete('/email/:email', async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       status: 'error',
       code: 'INTERNAL_ERROR',
       title: 'Internal Server Error',

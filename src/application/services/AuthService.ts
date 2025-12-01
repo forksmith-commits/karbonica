@@ -3,7 +3,7 @@ import { IEmailVerificationTokenRepository } from '../../domain/repositories/IEm
 import { ISessionRepository } from '../../domain/repositories/ISessionRepository';
 import { IEmailService } from '../../domain/services/IEmailService';
 import { ICardanoWalletRepository } from '../../domain/repositories/ICardanoWalletRepository';
-import { User, CreateUserData, UserRole } from '../../domain/entities/User';
+import { User, UserRole } from '../../domain/entities/User';
 import { Session } from '../../domain/entities/Session';
 import { CryptoUtils, AuthTokens } from '../../utils/crypto';
 import { validateEmail } from '../../utils/validation';
@@ -35,10 +35,8 @@ export interface LoginResult {
 }
 
 export class AuthService {
-  private loginChallenges: Map<string, { userId: string; expiresAt: Date }> = new Map();
   private readonly ACCOUNT_LOCKOUT_THRESHOLD = 5;
   private readonly ACCOUNT_LOCKOUT_DURATION_MS = 30 * 60 * 1000; // 30 minutes
-  private readonly FAILED_LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
   private walletService: CardanoWalletService;
 
   constructor(
@@ -46,7 +44,7 @@ export class AuthService {
     private emailVerificationTokenRepository: IEmailVerificationTokenRepository,
     private sessionRepository: ISessionRepository,
     private emailService: IEmailService,
-    private walletRepository: ICardanoWalletRepository
+    walletRepository: ICardanoWalletRepository
   ) {
     this.walletService = new CardanoWalletService(walletRepository, userRepository);
   }
@@ -186,57 +184,64 @@ export class AuthService {
     // Find user by email
     const user = await this.userRepository.findByEmail(email.toLowerCase());
 
-    if (!user) {
-      logger.warn('Login attempt with non-existent email', { email });
-      throw new Error('Invalid credentials');
-    }
+    // SECURITY FIX: Always perform bcrypt comparison to prevent timing attacks
+    // Use dummy hash if user doesn't exist to maintain constant time
+    const DUMMY_HASH = '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYIq8r8MiQu'; // Valid bcrypt format
+    const hashToCompare = user?.passwordHash || DUMMY_HASH;
 
-    // Check if account is locked
-    if (user.accountLocked) {
+    // Check if account is locked (before password verification to save resources)
+    if (user?.accountLocked) {
       logger.warn('Login attempt on locked account', { userId: user.id, email });
       throw new Error('Account is locked. Please try again later.');
     }
 
-    // Verify password
-    const isPasswordValid = await CryptoUtils.verifyPassword(password, user.passwordHash);
+    // Verify password - this now takes constant time regardless of user existence
+    const isPasswordValid = await CryptoUtils.verifyPassword(password, hashToCompare);
 
-    if (!isPasswordValid) {
-      // Increment failed login attempts
-      user.failedLoginAttempts += 1;
+    // Check if user exists AND password is valid
+    if (!user || !isPasswordValid) {
+      // Only increment failed attempts if user exists
+      if (user && !isPasswordValid) {
+        user.failedLoginAttempts += 1;
 
-      // Lock account if threshold reached
-      if (user.failedLoginAttempts >= this.ACCOUNT_LOCKOUT_THRESHOLD) {
-        user.accountLocked = true;
+        // Lock account if threshold reached
+        if (user.failedLoginAttempts >= this.ACCOUNT_LOCKOUT_THRESHOLD) {
+          user.accountLocked = true;
+          await this.userRepository.update(user);
+
+          // Schedule unlock after 30 minutes
+          setTimeout(async () => {
+            const lockedUser = await this.userRepository.findById(user.id);
+            if (lockedUser && lockedUser.accountLocked) {
+              lockedUser.accountLocked = false;
+              lockedUser.failedLoginAttempts = 0;
+              await this.userRepository.update(lockedUser);
+              logger.info('Account unlocked after timeout', { userId: user.id });
+            }
+          }, this.ACCOUNT_LOCKOUT_DURATION_MS);
+
+          logger.warn('Account locked due to failed login attempts', {
+            userId: user.id,
+            email,
+            attempts: user.failedLoginAttempts,
+          });
+
+          throw new Error('Account locked due to too many failed login attempts');
+        }
+
         await this.userRepository.update(user);
 
-        // Schedule unlock after 30 minutes
-        setTimeout(async () => {
-          const lockedUser = await this.userRepository.findById(user.id);
-          if (lockedUser && lockedUser.accountLocked) {
-            lockedUser.accountLocked = false;
-            lockedUser.failedLoginAttempts = 0;
-            await this.userRepository.update(lockedUser);
-            logger.info('Account unlocked after timeout', { userId: user.id });
-          }
-        }, this.ACCOUNT_LOCKOUT_DURATION_MS);
-
-        logger.warn('Account locked due to failed login attempts', {
+        logger.warn('Failed login attempt', {
           userId: user.id,
           email,
           attempts: user.failedLoginAttempts,
         });
-
-        throw new Error('Account locked due to too many failed login attempts');
+      } else {
+        // User doesn't exist - log without user details to prevent enumeration
+        logger.warn('Failed login attempt - non-existent email', { email });
       }
 
-      await this.userRepository.update(user);
-
-      logger.warn('Failed login attempt', {
-        userId: user.id,
-        email,
-        attempts: user.failedLoginAttempts,
-      });
-
+      // Always throw same error message to prevent user enumeration
       throw new Error('Invalid credentials');
     }
 

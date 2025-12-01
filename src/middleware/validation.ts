@@ -41,7 +41,7 @@ export const validateRequest = (schema: z.ZodSchema) => {
           },
         });
       }
-      next(error);
+      return next(error);
     }
   };
 };
